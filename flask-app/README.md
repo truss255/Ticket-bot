@@ -1,60 +1,51 @@
-# Flask Application
+# Ticket Bot
 
-This is a Flask application designed to handle ticket management and integrate with Slack.
+A Flask-based ticket management system with Slack integration, designed to handle ticket creation, retrieval, and summaries.
 
-## Project Structure
+## Features
 
-```
-flask-app
-├── app.py                # Main application file for the Flask app
-├── requirements.txt      # Python dependencies required for the project
-├── runtime.txt           # Specifies the Python version for deployment
-├── Procfile              # Commands executed by the application on Railway
-├── Dockerfile            # Instructions for building a Docker image
-├── .env                  # Environment variables for the application
-└── README.md             # Documentation for the project
-```
-
-## Setup Instructions
-
-1. **Clone the repository:**
-   ```
-   git clone <repository-url>
-   cd flask-app
-   ```
-
-2. **Create a virtual environment:**
-   ```
-   python -m venv venv
-   source venv/bin/activate  # On Windows use `venv\Scripts\activate`
-   ```
-
-3. **Install dependencies:**
-   ```
-   pip install -r requirements.txt
-   ```
-
-4. **Set up environment variables:**
-   Create a `.env` file in the root directory and add your environment variables.
-
-5. **Run the application:**
-   ```
-   python app.py
-   ```
-
-## Usage
-
-- The application exposes several API endpoints for ticket management:
-  - `POST /api/tickets/new-ticket`: Create a new ticket.
-  - `POST /api/tickets/agent-tickets`: Retrieve agent tickets.
-  - `POST /api/tickets/system-tickets`: Retrieve system tickets.
-  - `POST /api/tickets/ticket-summary`: Get a summary of tickets.
-  - `POST /api/tickets/slack/events`: Handle Slack events.
+- **New Ticket Creation**: Create new tickets via the `/api/tickets/new-ticket` endpoint.
+- **Agent Tickets**: Retrieve tickets assigned to agents via the `/api/tickets/agent-tickets` endpoint.
+- **System Tickets**: Retrieve system-related tickets via the `/api/tickets/system-tickets` endpoint.
+- **Ticket Summary**: Get a summary of tickets via the `/api/tickets/ticket-summary` endpoint.
+- **Slack Events**: Handle Slack events via the `/api/tickets/slack/events` endpoint.
 
 ## Deployment
 
-This application can be deployed on Railway. Ensure that the `Procfile` and `runtime.txt` are correctly configured for the deployment environment.
+This application is deployed on [Railway](https://railway.app/).
 
-## License
+### Environment Variables
 
-This project is licensed under the MIT License.
+The following environment variables are required for the application to run:
+
+- `SLACK_BOT_TOKEN`: Token for Slack bot integration.
+- `DATABASE_URL`: URL for the database connection.
+- `ADMIN_CHANNEL`: Slack channel for admin notifications.
+- `TIMEZONE`: Timezone for ticket processing.
+
+### Running the Application
+
+The application is configured to run on Railway. No additional setup is required if the environment variables are configured in Railway's dashboard.
+
+## Endpoints
+
+| Endpoint                          | Method | Description                     |
+|-----------------------------------|--------|---------------------------------|
+| `/api/tickets/new-ticket`         | POST   | Create a new ticket.           |
+| `/api/tickets/agent-tickets`      | POST   | Retrieve agent tickets.        |
+| `/api/tickets/system-tickets`     | POST   | Retrieve system tickets.       |
+| `/api/tickets/ticket-summary`     | POST   | Get a summary of tickets.      |
+| `/api/tickets/slack/events`       | POST   | Handle Slack events.           |
+
+## Requirements
+
+- Python 3.9 or higher
+- Flask
+- Any additional dependencies listed in `requirements.txt`
+
+## Installation (For Local Development)
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/your-username/Ticket-bot.git
+   cd Ticket-bot/flask-app
