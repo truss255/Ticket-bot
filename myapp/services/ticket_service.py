@@ -1,6 +1,7 @@
 from myapp.utils.slack_client import slack_client
 from myapp.config import Config
 import logging
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +102,47 @@ def find_ticket_by_id(ticket_id):
         logger.error(f"Error finding ticket: {e}")
         return None
 
+def fetch_agent_tickets(user_id):
+    """Fetch tickets submitted by a specific agent."""
+    try:
+        all_tickets = fetch_all_tickets()
+        return [t for t in all_tickets if t.get('user_id') == user_id]
+    except Exception as e:
+        logger.error(f"Error fetching agent tickets: {e}")
+        return []
 
+def fetch_system_tickets():
+    """Fetch tickets marked as system tickets."""
+    try:
+        all_tickets = fetch_all_tickets()
+        return [t for t in all_tickets if t.get('is_system_ticket', False)]
+    except Exception as e:
+        logger.error(f"Error fetching system tickets: {e}")
+        return []
 
+def get_ticket_summary():
+    """Get summary statistics of tickets."""
+    try:
+        tickets = fetch_all_tickets()
+        open_tickets = [t for t in tickets if t['status'].lower() == 'open']
+        closed_tickets = [t for t in tickets if t['status'].lower() == 'closed']
+        high_priority = [t for t in tickets if 'high priority' in t.get('text', '').lower()]
+        
+        # Calculate average resolution time (dummy calculation)
+        avg_time = "24 hours"  # Replace with actual calculation
+        
+        return {
+            "open": len(open_tickets),
+            "closed": len(closed_tickets),
+            "high_priority": len(high_priority),
+            "avg_resolution_time": avg_time
+        }
+    except Exception as e:
+        logger.error(f"Error getting ticket summary: {e}")
+        return {
+            "open": 0,
+            "closed": 0,
+            "high_priority": 0,
+            "avg_resolution_time": "N/A"
+        }
 

@@ -1,23 +1,35 @@
 import os
 import json
 import logging
-from slack_sdk import WebClient
 
-# Configure logging
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-# Configure logging for production
-handler = logging.StreamHandler()  # Log to stdout for Railway
-formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-handler.setFormatter(formatter)
-logger.addHandler(handler)
 
 class Config:
-    # Railway automatically provides PORT
-    PORT = int(os.environ.get("PORT", 8080))
+    # Railway-specific configurations
+    RAILWAY_ENVIRONMENT_NAME = os.getenv('RAILWAY_ENVIRONMENT_NAME', 'production')
+    RAILWAY_GIT_COMMIT = os.getenv('RAILWAY_GIT_COMMIT', 'unknown')
+    RAILWAY_GIT_BRANCH = os.getenv('RAILWAY_GIT_BRANCH', 'main')
+    RAILWAY_SERVICE_NAME = os.getenv('RAILWAY_SERVICE_NAME', 'web')
     
-    # Required environment variables
+    # Domain configuration
+    APP_DOMAIN = os.getenv('APP_DOMAIN', 'ticket-bot-production.up.railway.app')
+    APP_URL = f"https://{APP_DOMAIN}"
+    
+    # Security settings for domain
+    SESSION_COOKIE_DOMAIN = APP_DOMAIN
+    SESSION_COOKIE_SECURE = True
+    PREFERRED_URL_SCHEME = 'https'
+    
+    # Application settings
+    DEBUG = RAILWAY_ENVIRONMENT_NAME != 'production'
+    TESTING = RAILWAY_ENVIRONMENT_NAME == 'test'
+    
+    # Gunicorn settings for Railway
+    WORKERS = int(os.getenv('GUNICORN_WORKERS', '4'))
+    THREADS = int(os.getenv('GUNICORN_THREADS', '2'))
+    TIMEOUT = int(os.getenv('GUNICORN_TIMEOUT', '30'))
+    
+    # Make Slack configs optional with warnings
     SLACK_BOT_TOKEN = os.getenv('SLACK_BOT_TOKEN')
     SLACK_CHANNEL = os.getenv("SLACK_CHANNEL")
     TICKET_STORAGE_CHANNEL = os.getenv("TICKET_STORAGE_CHANNEL")
@@ -25,22 +37,31 @@ class Config:
     # Optional environment variables with defaults
     SYSTEM_USERS = os.getenv("SYSTEM_USERS", "").split(",")
     TIMEZONE = os.getenv('TIMEZONE', 'UTC')
-    ENVIRONMENT = os.getenv('ENVIRONMENT', 'production')
     
-    # Validate required environment variables
-    required_vars = ['SLACK_BOT_TOKEN', 'SLACK_CHANNEL', 'TICKET_STORAGE_CHANNEL']
-    missing_vars = [var for var in required_vars if not os.getenv(var)]
+    # Slack configurations
+    SLACK_SIGNING_SECRET = os.getenv('SLACK_SIGNING_SECRET')
+    SLACK_BOT_SCOPES = [
+        "channels:read",
+        "channels:history",
+        "chat:write",
+        "commands",
+        "files:read",
+        "pins:write",
+        "users:read",
+        "im:write",
+        "im:history",
+        "groups:write"
+    ]
     
-    if missing_vars:
-        error_msg = f"Missing required environment variables: {', '.join(missing_vars)}"
-        logger.error(error_msg)
-        raise ValueError(error_msg)
-
-# ✅ Initialize Slack client
-try:
-    client = WebClient(token=Config.SLACK_BOT_TOKEN)
-    logger.info("Slack client initialized successfully.")
-except Exception as e:
-    logger.error(f"Failed to initialize Slack client: {e}")
-    raise
+    @classmethod
+    def get_deployment_info(cls):
+        """Get Railway deployment information"""
+        return {
+            "environment": cls.RAILWAY_ENVIRONMENT_NAME,
+            "git_commit": cls.RAILWAY_GIT_COMMIT,
+            "git_branch": cls.RAILWAY_GIT_BRANCH,
+            "service": cls.RAILWAY_SERVICE_NAME,
+            "domain": cls.APP_DOMAIN,
+            "url": cls.APP_URL
+        }
 

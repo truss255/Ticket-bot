@@ -1,85 +1,133 @@
 from flask import Blueprint, jsonify, request
 from myapp.services.ticket_service import (
     fetch_all_tickets,
-    update_ticket_status,
-    is_system_user,
-    create_ticket
+    fetch_agent_tickets,
+    fetch_system_tickets,
+    create_ticket,
+    get_ticket_summary,
+    is_system_user
 )
+from myapp.utils.slack_verify import verify_slack_signature
 import logging
 
 logger = logging.getLogger(__name__)
 ticket_blueprint = Blueprint('ticket', __name__)
 
 @ticket_blueprint.route('/new-ticket', methods=['POST'])
+@verify_slack_signature
 def new_ticket():
     try:
-        logger.info(f"Incoming Slack request: {request.form}")
         data = request.form
         if not data or 'text' not in data:
-            return jsonify({"error": "Invalid payload"}), 400
+            return jsonify({
+                "response_type": "ephemeral",
+                "text": "Please provide ticket details"
+            }), 400
+
+        ticket = create_ticket({
+            "text": data['text'],
+            "user_id": data.get('user_id'),
+            "user_name": data.get('user_name')
+        })
         
-        logger.info(f"New ticket created with text: {data['text']}")
-        return jsonify({"message": "Request received"}), 200
+        return jsonify({
+            "response_type": "in_channel",
+            "text": f"✅ Ticket created successfully!\nID: {ticket['ticket_id']}"
+        })
     except Exception as e:
         logger.error(f"Error creating ticket: {str(e)}")
-        return jsonify({"error": "Internal server error"}), 500
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": "Failed to create ticket. Please try again."
+        }), 500
 
-@ticket_blueprint.route('/agent-tickets', methods=['GET'])
+@ticket_blueprint.route('/agent-tickets', methods=['POST'])
+@verify_slack_signature
 def agent_tickets():
     try:
-        tickets = fetch_all_tickets()
-        return jsonify({"tickets": tickets}), 200
+        user_id = request.form.get('user_id')
+        tickets = fetch_agent_tickets(user_id)
+        
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": format_tickets_response(tickets)
+        })
     except Exception as e:
         logger.error(f"Error fetching agent tickets: {str(e)}")
-        return jsonify({"error": "Internal server error"}), 500
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": "Failed to fetch tickets. Please try again."
+        }), 500
 
-@ticket_blueprint.route('/system-tickets', methods=['GET'])
+@ticket_blueprint.route('/system-tickets', methods=['POST'])
+@verify_slack_signature
 def system_tickets():
     try:
-        tickets = fetch_all_tickets()
-        filtered_tickets = [t for t in tickets if t.get('is_system_ticket', False)]
-        return jsonify({"tickets": filtered_tickets}), 200
+        user_id = request.form.get('user_id')
+        if not is_system_user(user_id):
+            return jsonify({
+                "response_type": "ephemeral",
+                "text": "⚠️ Access denied. This command is for system users only."
+            }), 403
+            
+        tickets = fetch_system_tickets()
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": format_tickets_response(tickets)
+        })
     except Exception as e:
         logger.error(f"Error fetching system tickets: {str(e)}")
-        return jsonify({"error": "Internal server error"}), 500
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": "Failed to fetch tickets. Please try again."
+        }), 500
 
-@ticket_blueprint.route('/ticket-summary', methods=['GET'])
+@ticket_blueprint.route('/ticket-summary', methods=['POST'])
+@verify_slack_signature
 def ticket_summary():
     try:
-        # Add your ticket summary logic here
-        return jsonify({"message": "Ticket summary endpoint"}), 200
-    except Exception as e:
-        logger.error(f"Error in ticket summary: {str(e)}")
-        return jsonify({"error": "Internal server error"}), 500
-
-@ticket_blueprint.route('/slack/events', methods=['POST'])
-def slack_events():
-    try:
-        # Get the JSON data from the request
-        data = request.get_json()
-        
-        # Log the incoming data
-        logger.info(f"Received Slack event data: {data}")
-
-        # Handle URL verification challenge
-        if data and data.get('type') == 'url_verification':
-            challenge = data.get('challenge')
-            logger.info(f"Responding to challenge: {challenge}")
+        user_id = request.form.get('user_id')
+        if not is_system_user(user_id):
             return jsonify({
-                "challenge": challenge
-            })
-
-        # Handle other events
-        if data and data.get('type') == 'event_callback':
-            event = data.get('event', {})
-            logger.info(f"Processing event: {event}")
-            # Add your event handling logic here
+                "response_type": "ephemeral",
+                "text": "⚠️ Access denied. This command is for system users only."
+            }), 403
             
-        return jsonify({"status": "ok"})
-
+        summary = get_ticket_summary()
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": format_summary_response(summary)
+        })
     except Exception as e:
-        logger.error(f"Error in slack_events: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Error getting ticket summary: {str(e)}")
+        return jsonify({
+            "response_type": "ephemeral",
+            "text": "Failed to get summary. Please try again."
+        }), 500
+
+def format_tickets_response(tickets):
+    if not tickets:
+        return "No tickets found."
+        
+    response = "📋 *Tickets*\n\n"
+    for ticket in tickets:
+        response += (
+            f"🎫 *ID:* {ticket['ticket_id']}\n"
+            f"📝 *Issue:* {ticket['issue']}\n"
+            f"🔄 *Status:* {ticket['status']}\n"
+            f"-------------------\n"
+        )
+    return response
+
+def format_summary_response(summary):
+    return (
+        "📊 *Ticket Summary*\n\n"
+        f"📫 Open: {summary['open']}\n"
+        f"✅ Closed: {summary['closed']}\n"
+        f"⚡ High Priority: {summary['high_priority']}\n"
+        f"⏳ Average Resolution Time: {summary['avg_resolution_time']}\n"
+    )
+
 
 
 
