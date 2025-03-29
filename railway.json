@@ -1,10 +1,10 @@
 {
     "build": {
         "builder": "NIXPACKS",
-        "buildCommand": "pip install -r requirements.txt && chmod +x railway_startup.sh"
+        "buildCommand": "pip install -r requirements.txt"
     },
     "deploy": {
-        "startCommand": "chmod +x railway_startup.sh && ./railway_startup.sh",
+        "startCommand": "gunicorn main:app --workers 4 --threads 2 --timeout 30 --bind 0.0.0.0:$PORT --log-level info --access-logfile - --error-logfile -",
         "healthcheckPath": "/health",
         "healthcheckTimeout": 100,
         "restartPolicyType": "ON_FAILURE",
@@ -12,15 +12,7 @@
     },
     "variables": {
         "PYTHON_VERSION": "3.11.0",
-        "NIXPACKS_PYTHON_VERSION": "3.11.0",
-        "GUNICORN_WORKERS": "4",
-        "GUNICORN_THREADS": "2",
-        "GUNICORN_TIMEOUT": "30",
-        "APP_DOMAIN": "ticket-bot-production.up.railway.app"
+        "NIXPACKS_PYTHON_VERSION": "3.11.0"
     }
 }
-
-
-
-
 
