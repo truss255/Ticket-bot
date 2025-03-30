@@ -28,8 +28,6 @@ logger.info("Logging configured.")
 # Environment variables (unchanged)
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
-SLACK_CHANNEL = os.getenv("SLACK_CHANNEL", "#systems-issues")
-SYSTEM_USERS = os.getenv("SYSTEM_USERS", "").split(",")
 ADMIN_CHANNEL = os.getenv("ADMIN_CHANNEL", "#admin-notifications")
 TIMEZONE = os.getenv("TIMEZONE", "America/New_York")
 
@@ -45,37 +43,16 @@ if not DATABASE_URL:
 client = WebClient(token=SLACK_BOT_TOKEN)
 logger.info("Slack client initialized.")
 
-def get_channel_id(channel_name):
-    """Convert channel name to channel ID"""
-    try:
-        # Remove the '#' if present
-        channel_name = channel_name.lstrip('#')
-        
-        # Get channel list
-        result = client.conversations_list()
-        for channel in result["channels"]:
-            if channel["name"] == channel_name:
-                return channel["id"]
-        raise ValueError(f"Channel '{channel_name}' not found")
-    except SlackApiError as e:
-        logger.error(f"Error getting channel ID: {e}")
-        raise
+SLACK_CHANNEL_ID = "C08JTKR1RPT"
+logger.info(f"Using Slack channel ID: {SLACK_CHANNEL_ID}")
 
-SLACK_CHANNEL_ID = None
+# Verify channel access directly
 try:
-    SLACK_CHANNEL_ID = get_channel_id(SLACK_CHANNEL)
-    logger.info(f"Successfully resolved channel ID for {SLACK_CHANNEL}")
-except Exception as e:
-    logger.error(f"Failed to get channel ID for {SLACK_CHANNEL}: {e}")
-    raise
-
-# Verify channel exists and bot has access
-try:
-    channel_info = client.conversations_info(channel=SLACK_CHANNEL.lstrip('#'))
-    logger.info(f"Successfully connected to channel {SLACK_CHANNEL}")
+    channel_info = client.conversations_info(channel=SLACK_CHANNEL_ID)
+    logger.info("Successfully connected to channel")
 except SlackApiError as e:
-    logger.error(f"Error accessing channel {SLACK_CHANNEL}: {e}")
-    raise ValueError(f"Cannot access channel {SLACK_CHANNEL}. Please verify channel exists and bot is invited.")
+    logger.error(f"Error accessing channel: {e}")
+    raise ValueError("Cannot access channel. Please verify bot is invited.")
 
 # Initialize database connection pool (unchanged)
 db_pool = pool.SimpleConnectionPool(1, 10, DATABASE_URL)
