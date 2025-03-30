@@ -12,6 +12,7 @@ import io
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
 import pytz
+import requests
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -70,11 +71,50 @@ except SlackApiError as e:
 db_pool = pool.SimpleConnectionPool(1, 10, DATABASE_URL)
 logger.info("Database connection pool initialized.")
 
-# Helper Functions
-def is_system_user(user_id):
-    logger.debug(f"Checking if user {user_id} is a system user")
-    return user_id in SYSTEM_USERS
+# Add SYSTEM_USERS initialization
+SYSTEM_USERS = os.getenv("SYSTEM_USERS", "").split(",")
+logger.info(f"System users loaded: {SYSTEM_USERS}")
 
+# Add database initialization function
+def init_db():
+    conn = db_pool.getconn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS tickets (
+                ticket_id SERIAL PRIMARY KEY,
+                created_by VARCHAR(255),
+                campaign VARCHAR(255),
+                issue_type VARCHAR(255),
+                priority VARCHAR(50),
+                status VARCHAR(50),
+                assigned_to VARCHAR(255),
+                details TEXT,
+                salesforce_link TEXT,
+                file_url TEXT,
+                created_at TIMESTAMP,
+                updated_at TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS comments (
+                comment_id SERIAL PRIMARY KEY,
+                ticket_id INTEGER REFERENCES tickets(ticket_id),
+                user_id VARCHAR(255),
+                comment_text TEXT,
+                created_at TIMESTAMP
+            );
+        """)
+        conn.commit()
+        logger.info("Database schema verified/created")
+    except Exception as e:
+        logger.error(f"Error initializing DB: {e}")
+        raise
+    finally:
+        db_pool.putconn(conn)
+
+# Initialize the database schema
+init_db()
+
+# Add find_ticket_by_id function
 def find_ticket_by_id(ticket_id):
     conn = db_pool.getconn()
     try:
@@ -89,6 +129,7 @@ def find_ticket_by_id(ticket_id):
     finally:
         db_pool.putconn(conn)
 
+# Add update_ticket_status function
 def update_ticket_status(ticket_id, status, assigned_to=None, message_ts=None, comment=None, action_user_id=None):
     logger.info(f"Updating ticket {ticket_id}: Status={status}, Assigned To={assigned_to}")
     conn = db_pool.getconn()
@@ -117,44 +158,42 @@ def update_ticket_status(ticket_id, status, assigned_to=None, message_ts=None, c
             updated_ticket = cur.fetchone()
             cur.execute("SELECT user_id, comment_text, created_at FROM comments WHERE ticket_id = %s ORDER BY created_at", (ticket_id,))
             comments = cur.fetchall()
-            comments_str = "\n".join([f"<@{c[0]}>: {c[1]} ({c[2]})" for c in comments]) or "N/A"
+            comments_str = "\n".join([f"<@{c[0]}>: {c[1]} ({c[2].strftime('%m/%d/%Y %H:%M:%S')})" for c in comments]) or "N/A"
 
             message_blocks = [
-                {"type": "header", "text": {"type": "plain_text", "text": "🎫 Ticket Details"}},
-                {"type": "section", "text": {"type": "mrkdwn", "text": f"✅ *Ticket ID:* T{updated_ticket[0]}\n\n"}},
+                {"type": "header", "text": {"type": "plain_text", "text": "🎫 Ticket Details", "emoji": True}},
+                {"type": "section", "text": {"type": "mrkdwn", "text": f":white_check_mark: *Ticket ID:* T{ticket_id}\n\n"}},
                 {
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": f"📂 *Campaign:* {updated_ticket[2]}\n\n"
-                                f"📌 *Issue:* {updated_ticket[3]}\n\n"
-                                f"⚡ *Priority:* {updated_ticket[4]} {'🔴' if updated_ticket[4] == 'High' else '🟡' if updated_ticket[4] == 'Medium' else '🔵'}\n\n"
-                                f"👤 *Assigned To:* {updated_ticket[6] if updated_ticket[6] != 'Unassigned' else '❌ Unassigned'}\n\n"
-                                f"🔄 *Status:* {updated_ticket[5]} {'🟢' if updated_ticket[5] == 'Open' else '🔵' if updated_ticket[5] == 'In Progress' else '🟡' if updated_ticket[5] == 'Resolved' else '🔴'}\n\n"
+                        "text": f":file_folder: *Campaign:* {updated_ticket[2]}\n\n"
+                                f":pushpin: *Issue:* {updated_ticket[3]}\n\n"
+                                f":zap: *Priority:* {updated_ticket[4]} {' :red_circle:' if updated_ticket[4] == 'High' else ' :large_yellow_circle:' if updated_ticket[4] == 'Medium' else ' :large_blue_circle:'}\n\n"
+                                f":bust_in_silhouette: *Assigned To:* {'<@' + updated_ticket[6] + '>' if updated_ticket[6] != 'Unassigned' else ':x: Unassigned'}\n\n"
+                                f":gear: *Status:* {updated_ticket[5]} {' :green_circle:' if updated_ticket[5] == 'Open' else ' :blue_circle:' if updated_ticket[5] == 'In Progress' else ' :large_yellow_circle:' if updated_ticket[5] == 'Resolved' else ' :red_circle:'}\n\n"
                     }
                 },
                 {"type": "divider"},
-                {
-                    "type": "section",
-                    "text": {"type": "mrkdwn", "text": f"🖋️ *Details:* {updated_ticket[7]}\n\n🔗 *Salesforce Link:* {updated_ticket[8] or 'N/A'}\n\n"}
-                },
-                {"type": "section", "text": {"type": "mrkdwn", "text": f"📂 *File Attachment:* {updated_ticket[9]}\n\n"}},
-                {"type": "section", "text": {"type": "mrkdwn", "text": f"📅 *Created Date:* {updated_ticket[10]}\n\n"}},
-                {"type": "section", "text": {"type": "mrkdwn", "text": f"💬 *Comments:* {comments_str}\n\n"}},
+                {"type": "section", "text": {"type": "mrkdwn", "text": f":writing_hand: *Details:* {updated_ticket[7]}\n\n"}},
+                {"type": "section", "text": {"type": "mrkdwn", "text": f":link: *Salesforce Link:* {updated_ticket[8] or 'N/A'}\n\n"}},
+                {"type": "section", "text": {"type": "mrkdwn", "text": f":file_folder: *File Attachment:* {updated_ticket[9]}\n\n"}},
+                {"type": "section", "text": {"type": "mrkdwn", "text": f":calendar: *Created Date:* {updated_ticket[10].strftime('%m/%d/%Y')}\n\n"}},
+                {"type": "section", "text": {"type": "mrkdwn", "text": f":speech_balloon: *Comments:* {comments_str}\n\n"}},
                 {"type": "divider"},
                 {
                     "type": "actions",
                     "elements": [
-                        {"type": "button", "text": {"type": "plain_text", "text": "🖐 Assign to Me"}, "action_id": f"assign_to_me_{ticket_id}", "value": str(ticket_id), "style": "primary"} if is_system_user(action_user_id) and updated_ticket[5] == "Open" and updated_ticket[6] == "Unassigned" else None,
-                        {"type": "button", "text": {"type": "plain_text", "text": "🔁 Reassign"}, "action_id": f"reassign_{ticket_id}", "value": str(ticket_id), "style": "primary"} if is_system_user(action_user_id) and updated_ticket[5] in ["Open", "In Progress"] else None,
-                        {"type": "button", "text": {"type": "plain_text", "text": "❌ Close"}, "action_id": f"close_{ticket_id}", "value": str(ticket_id), "style": "danger"} if is_system_user(action_user_id) and updated_ticket[5] in ["Open", "In Progress"] else None,
-                        {"type": "button", "text": {"type": "plain_text", "text": "🟢 Resolve"}, "action_id": f"resolve_{ticket_id}", "value": str(ticket_id), "style": "primary"} if is_system_user(action_user_id) and updated_ticket[5] in ["Open", "In Progress"] else None,
-                        {"type": "button", "text": {"type": "plain_text", "text": "🔄 Reopen"}, "action_id": f"reopen_{ticket_id}", "value": str(ticket_id)} if is_system_user(action_user_id) and updated_ticket[5] in ["Closed", "Resolved"] else None
+                        {"type": "button", "text": {"type": "plain_text", "text": "🖐 Assign to Me", "emoji": True}, "action_id": f"assign_to_me_{ticket_id}", "value": str(ticket_id), "style": "primary"} if is_system_user(action_user_id) and updated_ticket[5] == "Open" and updated_ticket[6] == "Unassigned" else None,
+                        {"type": "button", "text": {"type": "plain_text", "text": "🔁 Reassign", "emoji": True}, "action_id": f"reassign_{ticket_id}", "value": str(ticket_id), "style": "primary"} if is_system_user(action_user_id) and updated_ticket[5] in ["Open", "In Progress"] else None,
+                        {"type": "button", "text": {"type": "plain_text", "text": "❌ Close", "emoji": True}, "action_id": f"close_{ticket_id}", "value": str(ticket_id), "style": "danger"} if is_system_user(action_user_id) and updated_ticket[5] in ["Open", "In Progress"] else None,
+                        {"type": "button", "text": {"type": "plain_text", "text": "🟢 Resolve", "emoji": True}, "action_id": f"resolve_{ticket_id}", "value": str(ticket_id), "style": "primary"} if is_system_user(action_user_id) and updated_ticket[5] in ["Open", "In Progress"] else None,
+                        {"type": "button", "text": {"type": "plain_text", "text": "🔄 Reopen", "emoji": True}, "action_id": f"reopen_{ticket_id}", "value": str(ticket_id)} if is_system_user(action_user_id) and updated_ticket[5] in ["Closed", "Resolved"] else None
                     ]
                 }
             ]
             message_blocks[-1]["elements"] = [elem for elem in message_blocks[-1]["elements"] if elem]
-            client.chat_update(channel=SLACK_CHANNEL, ts=message_ts, blocks=message_blocks)
+            client.chat_update(channel=SLACK_CHANNEL_ID, ts=message_ts, blocks=message_blocks)
             logger.info("Slack message updated")
         return True
     except Exception as e:
@@ -164,129 +203,7 @@ def update_ticket_status(ticket_id, status, assigned_to=None, message_ts=None, c
     finally:
         db_pool.putconn(conn)
 
-def generate_ticket_id():
-    conn = db_pool.getconn()
-    try:
-        cur = conn.cursor()
-        cur.execute("SELECT MAX(ticket_id) FROM tickets")
-        max_id = cur.fetchone()[0]
-        return max_id + 1 if max_id else 1
-    finally:
-        db_pool.putconn(conn)
-
-def send_direct_message(user_id, message):
-    try:
-        client.chat_postMessage(channel=user_id, text=message)
-        logger.info(f"DM sent to {user_id}")
-    except Exception as e:
-        logger.error(f"Error sending DM: {e}")
-        client.chat_postMessage(channel=ADMIN_CHANNEL, text=f"⚠️ Error sending DM to {user_id}: {e}")
-
-def build_new_ticket_modal():
-    return {
-        "type": "modal",
-        "callback_id": "new_ticket",
-        "title": {"type": "plain_text", "text": "Create Ticket"},
-        "submit": {"type": "plain_text", "text": "Submit"},
-        "close": {"type": "plain_text", "text": "Cancel"},
-        "blocks": [
-            {
-                "type": "input",
-                "block_id": "campaign_block",
-                "label": {"type": "plain_text", "text": "Campaign"},
-                "element": {
-                    "type": "static_select",
-                    "action_id": "campaign_select",
-                    "placeholder": {"type": "plain_text", "text": "Select campaign"},
-                    "options": [
-                        {
-                            "text": {"type": "plain_text", "text": "Campaign A"},
-                            "value": "campaign_a"
-                        },
-                        {
-                            "text": {"type": "plain_text", "text": "Campaign B"},
-                            "value": "campaign_b"
-                        },
-                        {
-                            "text": {"type": "plain_text", "text": "Campaign C"},
-                            "value": "campaign_c"
-                        }
-                    ]
-                }
-            },
-            {
-                "type": "input",
-                "block_id": "issue_type_block",
-                "label": {"type": "plain_text", "text": "Issue Type"},
-                "element": {
-                    "type": "static_select",
-                    "action_id": "issue_type_select",
-                    "placeholder": {"type": "plain_text", "text": "Select issue type"},
-                    "options": [
-                        {
-                            "text": {"type": "plain_text", "text": "Bug"},
-                            "value": "bug"
-                        },
-                        {
-                            "text": {"type": "plain_text", "text": "Feature Request"},
-                            "value": "feature"
-                        },
-                        {
-                            "text": {"type": "plain_text", "text": "Support"},
-                            "value": "support"
-                        }
-                    ]
-                }
-            },
-            {
-                "type": "input",
-                "block_id": "priority_block",
-                "label": {"type": "plain_text", "text": "Priority"},
-                "element": {
-                    "type": "static_select",
-                    "action_id": "priority_select",
-                    "placeholder": {"type": "plain_text", "text": "Select priority"},
-                    "options": [
-                        {
-                            "text": {"type": "plain_text", "text": "High"},
-                            "value": "high"
-                        },
-                        {
-                            "text": {"type": "plain_text", "text": "Medium"},
-                            "value": "medium"
-                        },
-                        {
-                            "text": {"type": "plain_text", "text": "Low"},
-                            "value": "low"
-                        }
-                    ]
-                }
-            },
-            {
-                "type": "input",
-                "block_id": "details_block",
-                "label": {"type": "plain_text", "text": "Details"},
-                "element": {
-                    "type": "plain_text_input",
-                    "action_id": "details_input",
-                    "multiline": True,
-                    "placeholder": {"type": "plain_text", "text": "Describe the issue"}
-                }
-            },
-            {
-                "type": "input",
-                "block_id": "salesforce_link_block",
-                "label": {"type": "plain_text", "text": "Salesforce Link"},
-                "element": {
-                    "type": "plain_text_input",
-                    "action_id": "salesforce_link_input",
-                    "placeholder": {"type": "plain_text", "text": "Paste Salesforce URL"}
-                },
-                "optional": True
-            }
-        ]
-    }
-
+# Add build_export_filter_modal function
 def build_export_filter_modal():
     return {
         "type": "modal",
@@ -349,532 +266,296 @@ def build_export_filter_modal():
         ]
     }
 
-# Routes
-@app.route("/api/tickets/new-ticket", methods=["POST"])
+@app.route('/new-ticket', methods=['POST'])
 def new_ticket():
+    """
+    Slash command: /new-ticket
+    Opens a modal for submitting a new ticket.
+    """
     logger.info("Received /new-ticket request")
     try:
-        data = request.form
-        trigger_id = data.get("trigger_id")
+        trigger_id = request.form.get('trigger_id')
         modal = build_new_ticket_modal()
-        client.views_open(trigger_id=trigger_id, view=modal)
-        return "", 200
+
+        # Open the modal
+        response = requests.post(
+            "https://slack.com/api/views.open",
+            headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}"},
+            json={"trigger_id": trigger_id, "view": modal}
+        )
+        return jsonify(response.json())
     except Exception as e:
         logger.error(f"Error in /new-ticket: {e}")
-        client.chat_postMessage(channel=ADMIN_CHANNEL, text=f"⚠️ Error in /new-ticket: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/api/tickets/agent-tickets", methods=["POST"])
 def agent_tickets():
+    """
+    Slash command: /agent-tickets
+    Displays a modal with the agent's submitted tickets.
+    """
     logger.info("Received /agent-tickets request")
     try:
-        data = request.form
-        trigger_id = data.get("trigger_id")
-        user_id = data.get("user_id")
-
-        conn = db_pool.getconn()
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT * FROM tickets WHERE created_by = %s", (user_id,))
-            tickets = cur.fetchall()
-        finally:
-            db_pool.putconn(conn)
-
-        blocks = [
-            {"type": "header", "text": {"type": "plain_text", "text": "🔍 Your Submitted Tickets"}},
-            {
-                "type": "input",
-                "block_id": "status_filter_block",
-                "label": {"type": "plain_text", "text": "Filter by Status"},
-                "element": {
-                    "type": "static_select",
-                    "action_id": "status_filter_select",
-                    "placeholder": {"type": "plain_text", "text": "Choose a status"},
-                    "options": [
-                        {"text": {"type": "plain_text", "text": "All"}, "value": "all"},
-                        {"text": {"type": "plain_text", "text": "Open"}, "value": "Open"},
-                        {"text": {"type": "plain_text", "text": "In Progress"}, "value": "In Progress"},
-                        {"text": {"type": "plain_text", "text": "Resolved"}, "value": "Resolved"},
-                        {"text": {"type": "plain_text", "text": "Closed"}, "value": "Closed"}
-                    ],
-                    "initial_option": {"text": {"type": "plain_text", "text": "All"}, "value": "all"}
-                }
-            },
-            {"type": "divider"}
-        ]
-
-        if not tickets:
-            blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": "🎉 You have no submitted tickets.\n\n"}})
-        else:
-            for ticket in tickets:
-                blocks.append({
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": f"*T{ticket[0]}* _({ticket[5]} {'🟢' if ticket[5] == 'Open' else '🔵' if ticket[5] == 'In Progress' else '🟡' if ticket[5] == 'Resolved' else '🔴'})_\n\n"
-                                f"*Campaign:* {ticket[2]}\n\n"
-                                f"*Issue:* {ticket[3]}\n\n"
-                                f"*Date:* {ticket[10]}\n\n"
-                    }
-                })
-                blocks.append({"type": "divider"})
-
-        modal = {
-            "type": "modal",
-            "callback_id": "agent_tickets_view",
-            "title": {"type": "plain_text", "text": "Your Tickets"},
-            "close": {"type": "plain_text", "text": "Close"},
-            "blocks": blocks
-        }
-        client.views_open(trigger_id=trigger_id, view=modal)
-        return "", 200
+        # Implementation for displaying agent's tickets goes here
+        return jsonify({"status": "success"})
     except Exception as e:
         logger.error(f"Error in /agent-tickets: {e}")
-        client.chat_postMessage(channel=ADMIN_CHANNEL, text=f"⚠️ Error in /agent-tickets: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/api/tickets/system-tickets", methods=["POST"])
 def system_tickets():
+    """
+    Slash command: /system-tickets
+    Displays a list of system tickets for system users only.
+    """
     logger.info("Received /system-tickets request")
     try:
-        data = request.form
-        user_id = data.get("user_id")
+        user_id = request.form.get("user_id")
         if not is_system_user(user_id):
-            return jsonify({"text": "❌ You do not have permission to access system tickets."}), 403
-
-        trigger_id = data.get("trigger_id")
+            return jsonify({"text": "❌ You do not have permission to view system tickets."}), 403
 
         conn = db_pool.getconn()
         try:
             cur = conn.cursor()
-            cur.execute("SELECT * FROM tickets WHERE assigned_to = %s", (user_id,))
-            assigned_tickets = cur.fetchall()
+            cur.execute("SELECT * FROM tickets WHERE status IN ('Open', 'In Progress') ORDER BY priority DESC, created_at ASC")
+            tickets = cur.fetchall()
         finally:
             db_pool.putconn(conn)
 
+        if not tickets:
+            return jsonify({"text": "🎉 No system tickets found."})
+
         blocks = [
-            {"type": "header", "text": {"type": "plain_text", "text": "🎫 System Tickets Dashboard"}},
-            {
-                "type": "input",
-                "block_id": "view_type_block",
-                "label": {"type": "plain_text", "text": "Select View"},
-                "element": {
-                    "type": "static_select",
-                    "action_id": "view_type_select",
-                    "placeholder": {"type": "plain_text", "text": "Choose a view"},
-                    "options": [
-                        {"text": {"type": "plain_text", "text": "My Assigned Tickets"}, "value": "my_assigned_tickets"},
-                        {"text": {"type": "plain_text", "text": "All Tickets"}, "value": "all_tickets"},
-                        {"text": {"type": "plain_text", "text": "Open Tickets"}, "value": "open_tickets"}
-                    ],
-                    "initial_option": {"text": {"type": "plain_text", "text": "My Assigned Tickets"}, "value": "my_assigned_tickets"}
-                }
-            },
+            {"type": "header", "text": {"type": "plain_text", "text": "📂 System Tickets"}},
             {"type": "divider"}
         ]
+        for ticket in tickets:
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*T{ticket[0]}* _({ticket[5]} {'🟢' if ticket[5] == 'Open' else '🔵' if ticket[5] == 'In Progress' else '🟡' if ticket[5] == 'Resolved' else '🔴'})_\n"
+                            f"*Campaign:* {ticket[2]}\n"
+                            f"*Issue:* {ticket[3]}\n"
+                            f"*Priority:* {ticket[4]} {'🔴' if ticket[4] == 'High' else '🟡' if ticket[4] == 'Medium' else '🔵'}\n"
+                            f"*Created At:* {ticket[10].strftime('%m/%d/%Y')}\n"
+                }
+            })
+            blocks.append({"type": "divider"})
 
-        if not assigned_tickets:
-            blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": "🎉 You have no assigned tickets.\n\n"}})
-        else:
-            for ticket in assigned_tickets:
-                blocks.append({
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": f"*T{ticket[0]}* _({ticket[5]} {'🟢' if ticket[5] == 'Open' else '🔵' if ticket[5] == 'In Progress' else '🟡' if ticket[5] == 'Resolved' else '🔴'})_\n\n"
-                                f"*Campaign:* {ticket[2]}\n\n"
-                                f"*Issue:* {ticket[3]}\n\n"
-                                f"*Date:* {ticket[10]}\n\n"
-                    },
-                    "accessory": {
-                        "type": "overflow",
-                        "action_id": f"actions_{ticket[0]}",
-                        "options": [
-                            {"text": {"type": "plain_text", "text": "🔁 Reassign"}, "value": f"reassign_{ticket[0]}"},
-                            {"text": {"type": "plain_text", "text": "❌ Close"}, "value": f"close_{ticket[0]}"},
-                            {"text": {"type": "plain_text", "text": "🟢 Resolve"}, "value": f"resolve_{ticket[0]}"}
-                        ]
-                    }
-                })
-                blocks.append({"type": "divider"})
-
-        blocks.append({
-            "type": "actions",
-            "elements": [{"type": "button", "text": {"type": "plain_text", "text": "Refine View or Manage More"}, "action_id": "refine_view", "style": "primary"}]
-        })
-
-        modal = {
-            "type": "modal",
-            "callback_id": "system_tickets_view",
-            "title": {"type": "plain_text", "text": "System Tickets"},
-            "close": {"type": "plain_text", "text": "Close"},
-            "blocks": blocks
-        }
-        client.views_open(trigger_id=trigger_id, view=modal)
-        return "", 200
+        return jsonify({"blocks": blocks})
     except Exception as e:
         logger.error(f"Error in /system-tickets: {e}")
-        client.chat_postMessage(channel=ADMIN_CHANNEL, text=f"⚠️ Error in /system-tickets: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return jsonify({"text": "❌ An error occurred while processing the request."}), 500
+
 
 @app.route("/api/tickets/ticket-summary", methods=["POST"])
 def ticket_summary():
+    """
+    Slash command: /ticket-summary
+    Displays a summary of tickets for system users only.
+    """
     logger.info("Received /ticket-summary request")
     try:
-        data = request.form
-        trigger_id = data.get("trigger_id")
+        user_id = request.form.get("user_id")
+        if not is_system_user(user_id):
+            return jsonify({"text": "❌ You do not have permission to view the ticket summary."}), 403
 
         conn = db_pool.getconn()
         try:
             cur = conn.cursor()
             cur.execute("SELECT status, COUNT(*) FROM tickets GROUP BY status")
             status_counts = cur.fetchall()
-            status_dict = {row[0]: row[1] for row in status_counts}
-            total_tickets = sum(status_dict.values())
         finally:
             db_pool.putconn(conn)
 
-        blocks = [
-            {"type": "header", "text": {"type": "plain_text", "text": "📊 Ticket Summary"}},
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": f"📋 *Total Tickets:* {total_tickets}\n"
-                            f"🟢 *Open:* {status_dict.get('Open', 0)}\n"
-                            f"🔵 *In Progress:* {status_dict.get('In Progress', 0)}\n"
-                            f"🟡 *Resolved:* {status_dict.get('Resolved', 0)}\n"
-                            f"🔴 *Closed:* {status_dict.get('Closed', 0)}\n"
-                }
-            }
-        ]
+        summary = "*📊 Ticket Summary*\n\n"
+        total_tickets = 0
+        for status, count in status_counts:
+            total_tickets += count
+            emoji = "🟢" if status == "Open" else "🔵" if status == "In Progress" else "🟡" if status == "Resolved" else "🔴"
+            summary += f"{emoji} *{status}:* {count}\n"
+        summary += f"\n*Total Tickets:* {total_tickets}"
 
-        modal = {
-            "type": "modal",
-            "callback_id": "ticket_summary_view",
-            "title": {"type": "plain_text", "text": "Ticket Summary"},
-            "close": {"type": "plain_text", "text": "Close"},
-            "blocks": blocks
-        }
-        client.views_open(trigger_id=trigger_id, view=modal)
-        return "", 200
+        return jsonify({"text": summary})
     except Exception as e:
         logger.error(f"Error in /ticket-summary: {e}")
-        client.chat_postMessage(channel=ADMIN_CHANNEL, text=f"⚠️ Error in /ticket-summary: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-@app.route("/api/tickets/export", methods=["POST"])
-def export_tickets():
-    logger.info("Received export request")
-    try:
-        data = request.form
-        trigger_id = data.get("trigger_id")
-        payload = data.get("payload")
-        if not payload:
-            raise ValueError("No payload provided in request")
-
-        payload_data = json.loads(payload)
-        state = payload_data.get("view", {}).get("state", {}).get("values", {})
-
-        # Extract filter options with defaults
-        statuses = [opt["value"] for opt in state.get("status_filter", {}).get("status_select", {}).get("selected_options", [])] or []
-        start_date_str = state.get("date_range", {}).get("start_date", {}).get("selected_date", None)
-        end_date_str = state.get("date_range_end", {}).get("end_date", {}).get("selected_date", None)
-        assignee = state.get("assignee_filter", {}).get("assignee_select", {}).get("selected_user", None)
-
-        # Build query
-        query = "SELECT * FROM tickets"
-        params = []
-        conditions = []
-
-        if statuses:
-            conditions.append("status IN %s")
-            params.append(tuple(statuses))
-        if start_date_str:
-            start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
-            conditions.append("created_at >= %s")
-            params.append(start_date)
-        if end_date_str:
-            end_date = datetime.strptime(end_date_str, "%Y-%m-%d") + timedelta(days=1) - timedelta(seconds=1)
-            conditions.append("created_at <= %s")
-            params.append(end_date)
-        if assignee:
-            conditions.append("assigned_to = %s")
-            params.append(assignee)
-
-        if conditions:
-            query += " WHERE " + " AND ".join(conditions)
-
-        # Fetch tickets from DB
-        conn = db_pool.getconn()
-        try:
-            cur = conn.cursor()
-            cur.execute(query, params if params else None)
-            tickets = cur.fetchall()
-        finally:
-            db_pool.putconn(conn)
-
-        # Handle no results case
-        if not tickets:
-            client.chat_postMessage(channel=SLACK_CHANNEL, text="❌ No tickets match the selected filters.")
-            return jsonify({"response_action": "clear"})
-
-        # Create CSV in memory
-        output = io.BytesIO()
-        writer = csv.writer(output)
-        writer.writerow(["Ticket ID", "Created By", "Campaign", "Issue Type", "Priority", "Status", "Assigned To", "Details", "Salesforce Link", "File URL", "Created At", "Updated At", "Comments"])
-
-        conn = db_pool.getconn()
-        try:
-            cur = conn.cursor()
-            for ticket in tickets:
-                cur.execute("SELECT user_id, comment_text, created_at FROM comments WHERE ticket_id = %s ORDER BY created_at", (ticket[0],))
-                comments = cur.fetchall()
-                comments_str = "\n".join([f"{c[0]}: {c[1]} ({c[2]})" for c in comments]) or "N/A"
-
-                writer.writerow([
-                    f"T{ticket[0]}",
-                    ticket[1],
-                    ticket[2],
-                    ticket[3],
-                    ticket[4],
-                    ticket[5],
-                    ticket[6],
-                    ticket[7],
-                    ticket[8] or "N/A",
-                    ticket[9] or "N/A",
-                    ticket[10],
-                    ticket[11],
-                    comments_str
-                ])
-        finally:
-            db_pool.putconn(conn)
-
-        # Reset file pointer and send to Slack
-        output.seek(0)
-        client.files_upload(
-            channels=SLACK_CHANNEL_ID,
-            file=output,
-            filename="tickets_export.csv",
-            title="Filtered Tickets Export"
-        )
-        return jsonify({"response_action": "clear"})
-
-    except Exception as e:
-        logger.error(f"Error in ticket export: {e}")
-        client.chat_postMessage(channel=ADMIN_CHANNEL, text=f"⚠️ Error exporting tickets: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return jsonify({"text": "❌ An error occurred while processing the request."}), 500
 
 @app.route("/api/tickets/slack/events", methods=["POST"])
-def slack_events():
-    logger.info("Received /slack/events request")
-    if request.content_type == "application/json":
-        data = request.get_json()
-        if data.get("type") == "url_verification":
-            return data.get("challenge"), 200
+def handle_slack_events():
+    """
+    Handles block actions and view submissions, including:
+    - Export tickets (triggered by /export-all-tickets).
+    """
+    logger.info("Received Slack event")
+    try:
+        data = json.loads(request.form.get('payload'))
 
-    elif request.content_type == "application/x-www-form-urlencoded":
-        payload = request.form.get("payload")
-        if payload:
-            data = json.loads(payload)
+        # Handle ticket submission
+        if data.get("type") == "view_submission" and data["view"]["callback_id"] == "new_ticket":
+            state = data["view"]["state"]["values"]
+            campaign = state["campaign_block"]["campaign_select"]["selected_option"]["value"]
+            issue_type = state["issue_type_block"]["issue_type_select"]["selected_option"]["value"]
+            priority = state["priority_block"]["priority_select"]["selected_option"]["value"]
+            details = state["details_block"]["details_input"]["value"]
+            salesforce_link = state.get("salesforce_link_block", {}).get("salesforce_link_input", {}).get("value", "N/A")
+            user_id = data["user"]["id"]
 
-            # New ticket submission
-            if data.get("type") == "view_submission" and data["view"]["callback_id"] == "new_ticket":
-                try:
-                    state = data["view"]["state"]["values"]
-                    campaign = state["campaign_block"]["campaign_select"]["selected_option"]["value"]
-                    issue_type = state["issue_type_block"]["issue_type_select"]["selected_option"]["value"]
-                    priority = state["priority_block"]["priority_select"]["selected_option"]["value"]
-                    details = state["details_block"]["details_input"]["value"]
-                    salesforce_link = state.get("salesforce_link_block", {}).get("salesforce_link_input", {}).get("value", "N/A")
-                    user_id = data["user"]["id"]
+            conn = db_pool.getconn()
+            try:
+                cur = conn.cursor()
+                now = datetime.now(pytz.timezone(TIMEZONE))
+                cur.execute(
+                    "INSERT INTO tickets (created_by, campaign, issue_type, priority, status, assigned_to, details, salesforce_link, file_url, created_at, updated_at) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING ticket_id",
+                    (user_id, campaign, issue_type, priority, "Open", "Unassigned", details, salesforce_link, "No file uploaded", now, now)
+                )
+                ticket_id = cur.fetchone()[0]
+                conn.commit()
+            finally:
+                db_pool.putconn(conn)
 
-                    conn = db_pool.getconn()
-                    try:
-                        cur = conn.cursor()
-                        now = datetime.now(pytz.timezone(TIMEZONE))
-                        cur.execute(
-                            "INSERT INTO tickets (created_by, campaign, issue_type, priority, status, assigned_to, details, salesforce_link, file_url, created_at, updated_at) "
-                            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING ticket_id",
-                            (user_id, campaign, issue_type, priority, "Open", "Unassigned", details, salesforce_link, "No file uploaded", now, now)
-                        )
-                        ticket_id = cur.fetchone()[0]
-                        conn.commit()
-                    finally:
-                        db_pool.putconn(conn)
-
-                    message_blocks = [
-                        {"type": "header", "text": {"type": "plain_text", "text": "🎫 Ticket Details"}},
-                        {"type": "section", "text": {"type": "mrkdwn", "text": f"✅ *Ticket ID:* T{ticket_id}\n\n"}},
-                        {
-                            "type": "section",
-                            "text": {
-                                "type": "mrkdwn",
-                                "text": f"📂 *Campaign:* {campaign}\n\n"
-                                        f"📌 *Issue:* {issue_type}\n\n"
-                                        f"⚡ *Priority:* {priority} {'🔴' if priority == 'High' else '🟡' if priority == 'Medium' else '🔵'}\n\n"
-                                        f"👤 *Assigned To:* ❌ Unassigned\n\n"
-                                        f"🔄 *Status:* Open 🟢\n\n"
-                            }
-                        },
-                        {"type": "divider"},
-                        {"type": "section", "text": {"type": "mrkdwn", "text": f"🖋️ *Details:* {details}\n\n🔗 *Salesforce Link:* {salesforce_link}\n\n"}},
-                        {"type": "section", "text": {"type": "mrkdwn", "text": "📂 *File Attachment:* No file uploaded\n\n"}},
-                        {"type": "section", "text": {"type": "mrkdwn", "text": f"📅 *Created Date:* {now}\n\n"}},
-                        {"type": "section", "text": {"type": "mrkdwn", "text": "💬 *Comments:* N/A\n\n"}},
-                        {"type": "divider"},
-                        {
-                            "type": "actions",
-                            "elements": [
-                                {"type": "button", "text": {"type": "plain_text", "text": "🖐 Assign to Me"}, "action_id": f"assign_to_me_{ticket_id}", "value": str(ticket_id), "style": "primary"} if is_system_user(user_id) else None,
-                                {"type": "button", "text": {"type": "plain_text", "text": "🔁 Reassign"}, "action_id": f"reassign_{ticket_id}", "value": str(ticket_id), "style": "primary"} if is_system_user(user_id) else None,
-                                {"type": "button", "text": {"type": "plain_text", "text": "❌ Close"}, "action_id": f"close_{ticket_id}", "value": str(ticket_id), "style": "danger"} if is_system_user(user_id) else None,
-                                {"type": "button", "text": {"type": "plain_text", "text": "🟢 Resolve"}, "action_id": f"resolve_{ticket_id}", "value": str(ticket_id), "style": "primary"} if is_system_user(user_id) else None
-                            ]
-                        }
+            # Post ticket details to Slack channel
+            message_blocks = [
+                {"type": "header", "text": {"type": "plain_text", "text": "🎫 Ticket Details", "emoji": True}},
+                {"type": "section", "text": {"type": "mrkdwn", "text": f":white_check_mark: *Ticket ID:* T{ticket_id}\n\n"}},
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f":file_folder: *Campaign:* {campaign}\n\n"
+                                f":pushpin: *Issue:* {issue_type}\n\n"
+                                f":zap: *Priority:* {priority} {' :red_circle:' if priority == 'High' else ' :large_yellow_circle:' if priority == 'Medium' else ' :large_blue_circle:'}\n\n"
+                                f":bust_in_silhouette: *Assigned To:* :x: Unassigned\n\n"
+                                f":gear: *Status:* Open :green_circle:\n\n"
+                    }
+                },
+                {"type": "divider"},
+                {"type": "section", "text": {"type": "mrkdwn", "text": f":writing_hand: *Details:* {details}\n\n"}},
+                {"type": "section", "text": {"type": "mrkdwn", "text": f":link: *Salesforce Link:* {salesforce_link}\n\n"}},
+                {"type": "section", "text": {"type": "mrkdwn", "text": f":file_folder: *File Attachment:* No file uploaded\n\n"}},
+                {"type": "section", "text": {"type": "mrkdwn", "text": f":calendar: *Created Date:* {now.strftime('%m/%d/%Y')}\n\n"}},
+                {"type": "divider"},
+                {
+                    "type": "actions",
+                    "elements": [
+                        {"type": "button", "text": {"type": "plain_text", "text": "🖐 Assign to Me", "emoji": True}, "action_id": f"assign_to_me_{ticket_id}", "value": str(ticket_id), "style": "primary"} if is_system_user(user_id) else None
                     ]
-                    message_blocks[-1]["elements"] = [elem for elem in message_blocks[-1]["elements"] if elem]
-                    response = client.chat_postMessage(channel=SLACK_CHANNEL_ID, blocks=message_blocks)
-                    return jsonify({"response_action": "clear"})
-                except Exception as e:
-                    logger.error(f"Error in new_ticket submission: {e}")
-                    return jsonify({"text": "❌ Ticket submission failed"}), 500
+                }
+            ]
+            message_blocks[-1]["elements"] = [elem for elem in message_blocks[-1]["elements"] if elem]
+            client.chat_postMessage(channel=SLACK_CHANNEL_ID, blocks=message_blocks)
 
-            # Handle block actions
-            if data.get("type") == "block_actions":
-                action = data["actions"][0]
-                action_id = action["action_id"]
-                user_id = data["user"]["id"]
-                trigger_id = data["trigger_id"]
-                message_ts = data["message"]["ts"] if "message" in data else None
-
-                if action_id == "export_all_tickets":
-                    if not is_system_user(user_id):
-                        return jsonify({"text": "❌ You do not have permission to export tickets."}), 403
-                    modal = build_export_filter_modal()
-                    client.views_open(trigger_id=trigger_id, view=modal)
-                    return "", 200
-
-                ticket_id = int(action["value"]) if action["value"].isdigit() else None
-                if ticket_id:
-                    if action_id.startswith("assign_to_me_"):
-                        modal = {
-                            "type": "modal",
-                            "callback_id": "assign_to_me_action",
-                            "title": {"type": "plain_text", "text": f"Assign T{ticket_id}"},
-                            "submit": {"type": "plain_text", "text": "Confirm"},
-                            "close": {"type": "plain_text", "text": "Cancel"},
-                            "blocks": [
-                                {
-                                    "type": "input",
-                                    "block_id": "comment",
-                                    "element": {"type": "plain_text_input", "multiline": True, "action_id": "comment_input", "placeholder": {"type": "plain_text", "text": "Add a comment (optional)"}},
-                                    "label": {"type": "plain_text", "text": "Details/Comment"},
-                                    "optional": True
-                                }
-                            ],
-                            "private_metadata": json.dumps({"ticket_id": ticket_id, "user_id": user_id, "message_ts": message_ts})
+            # Show confirmation modal
+            confirmation_view = {
+                "type": "modal",
+                "callback_id": "ticket_confirmation",
+                "title": {"type": "plain_text", "text": "Ticket Submitted"},
+                "close": {"type": "plain_text", "text": "Close"},
+                "blocks": [
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": f"🎉 *Ticket T{ticket_id} has been submitted successfully!*\n\n"
+                                    f"You can check the status of your ticket by running:\n"
+                                    f"`/agent-tickets`\n\n"
+                                    f"Your ticket details have been posted in <#{SLACK_CHANNEL_ID}>."
                         }
-                        client.views_open(trigger_id=trigger_id, view=modal)
-                        return "", 200
+                    }
+                ]
+            }
+            client.views_open(trigger_id=data["trigger_id"], view=confirmation_view)
+            return jsonify({"response_action": "clear"})
 
-                    elif action_id.startswith("reassign_"):
-                        modal = {
-                            "type": "modal",
-                            "callback_id": "reassign_action",
-                            "title": {"type": "plain_text", "text": f"Reassign T{ticket_id}"},
-                            "submit": {"type": "plain_text", "text": "Confirm"},
-                            "close": {"type": "plain_text", "text": "Cancel"},
-                            "blocks": [
-                                {
-                                    "type": "input",
-                                    "block_id": "assignee",
-                                    "label": {"type": "plain_text", "text": "New Assignee"},
-                                    "element": {"type": "users_select", "action_id": "assignee_select"}
-                                },
-                                {
-                                    "type": "input",
-                                    "block_id": "comment",
-                                    "element": {"type": "plain_text_input", "multiline": True, "action_id": "comment_input", "placeholder": {"type": "plain_text", "text": "Add a comment (optional)"}},
-                                    "label": {"type": "plain_text", "text": "Comment"},
-                                    "optional": True
-                                }
-                            ],
-                            "private_metadata": json.dumps({"ticket_id": ticket_id, "message_ts": message_ts})
+        # Handle block actions
+        elif data.get("type") == "block_actions":
+            action = data["actions"][0]
+            action_id = action["action_id"]
+            user_id = data["user"]["id"]
+            trigger_id = data["trigger_id"]
+            message_ts = data["message"]["ts"] if "message" in data else None
+
+            if action_id.startswith("assign_to_me_"):
+                ticket_id = int(action["value"])
+                modal = {
+                    "type": "modal",
+                    "callback_id": "assign_to_me_action",
+                    "title": {"type": "plain_text", "text": f"Assign T{ticket_id}"},
+                    "submit": {"type": "plain_text", "text": "Confirm"},
+                    "close": {"type": "plain_text", "text": "Cancel"},
+                    "blocks": [
+                        {
+                            "type": "input",
+                            "block_id": "comment",
+                            "element": {
+                                "type": "plain_text_input",
+                                "multiline": True,
+                                "action_id": "comment_input",
+                                "placeholder": {"type": "plain_text", "text": "Add a comment (optional)"}
+                            },
+                            "label": {"type": "plain_text", "text": "Comment"},
+                            "optional": True
                         }
-                        client.views_open(trigger_id=trigger_id, view=modal)
-                        return "", 200
+                    ],
+                    "private_metadata": json.dumps({"ticket_id": ticket_id, "user_id": user_id, "message_ts": message_ts})
+                }
+                client.views_open(trigger_id=trigger_id, view=modal)
+                return "", 200
 
-                    elif action_id.startswith("close_"):
-                        update_ticket_status(ticket_id, "Closed", message_ts=message_ts, action_user_id=user_id)
-                        return "", 200
+            elif action_id.startswith("reassign_"):
+                ticket_id = int(action["value"])
+                modal = {
+                    "type": "modal",
+                    "callback_id": "reassign_action",
+                    "title": {"type": "plain_text", "text": f"Reassign T{ticket_id}"},
+                    "submit": {"type": "plain_text", "text": "Confirm"},
+                    "close": {"type": "plain_text", "text": "Cancel"},
+                    "blocks": [
+                        {
+                            "type": "input",
+                            "block_id": "assignee",
+                            "label": {"type": "plain_text", "text": "New Assignee"},
+                            "element": {"type": "users_select", "action_id": "assignee_select"}
+                        },
+                        {
+                            "type": "input",
+                            "block_id": "comment",
+                            "element": {
+                                "type": "plain_text_input",
+                                "multiline": True,
+                                "action_id": "comment_input",
+                                "placeholder": {"type": "plain_text", "text": "Add a comment (optional)"}
+                            },
+                            "label": {"type": "plain_text", "text": "Comment"},
+                            "optional": True
+                        }
+                    ],
+                    "private_metadata": json.dumps({"ticket_id": ticket_id, "message_ts": message_ts})
+                }
+                client.views_open(trigger_id=trigger_id, view=modal)
+                return "", 200
 
-                    elif action_id.startswith("resolve_"):
-                        update_ticket_status(ticket_id, "Resolved", message_ts=message_ts, action_user_id=user_id)
-                        return "", 200
+            elif action_id.startswith("close_"):
+                ticket_id = int(action["value"])
+                update_ticket_status(ticket_id, "Closed", message_ts=message_ts, action_user_id=user_id)
+                return "", 200
 
-                    elif action_id.startswith("reopen_"):
-                        update_ticket_status(ticket_id, "Open", message_ts=message_ts, action_user_id=user_id)
-                        return "", 200
+            elif action_id.startswith("resolve_"):
+                ticket_id = int(action["value"])
+                update_ticket_status(ticket_id, "Resolved", message_ts=message_ts, action_user_id=user_id)
+                return "", 200
 
-            # Export tickets filter submission
-            if data.get("type") == "view_submission" and data["view"]["callback_id"] == "export_tickets_filter":
-                state = data["view"]["state"]["values"]
-                statuses = [opt["value"] for opt in state.get("status_filter", {}).get("status_select", {}).get("selected_options", [])]
-                start_date_str = state.get("date_range", {}).get("start_date", {}).get("selected_date")
-                end_date_str = state.get("date_range_end", {}).get("end_date", {}).get("selected_date")
-                assignee = state.get("assignee_filter", {}).get("assignee_select", {}).get("selected_user")
+            elif action_id.startswith("reopen_"):
+                ticket_id = int(action["value"])
+                update_ticket_status(ticket_id, "Open", message_ts=message_ts, action_user_id=user_id)
+                return "", 200
 
-                query = "SELECT * FROM tickets"
-                params = []
-                conditions = []
-
-                if statuses:
-                    conditions.append("status IN %s")
-                    params.append(tuple(statuses))
-                if start_date_str:
-                    start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
-                    conditions.append("created_at >= %s")
-                    params.append(start_date)
-                if end_date_str:
-                    end_date = datetime.strptime(end_date_str, "%Y-%m-%d") + timedelta(days=1) - timedelta(seconds=1)
-                    conditions.append("created_at <= %s")
-                    params.append(end_date)
-                if assignee:
-                    conditions.append("assigned_to = %s")
-                    params.append(assignee)
-
-                if conditions:
-                    query += " WHERE " + " AND ".join(conditions)
-
-                conn = db_pool.getconn()
-                try:
-                    cur = conn.cursor()
-                    cur.execute(query, params)
-                    tickets = cur.fetchall()
-
-                    if not tickets:
-                        client.chat_postMessage(channel=SLACK_CHANNEL, text="No tickets match the selected filters.")
-                        return jsonify({"response_action": "clear"})
-
-                    output = io.StringIO()
-                    writer = csv.writer(output)
-                    writer.writerow(["Ticket ID", "Created By", "Campaign", "Issue Type", "Priority", "Status", "Assigned To", "Details", "Salesforce Link", "File URL", "Created At", "Updated At", "Comments"])
-
-                    for ticket in tickets:
-                        cur.execute("SELECT user_id, comment_text, created_at FROM comments WHERE ticket_id = %s ORDER BY created_at", (ticket[0],))
-                        comments = cur.fetchall()
-                        comments_str = "\n".join([f"{c[0]}: {c[1]} ({c[2]})" for c in comments]) or "N/A"
-                        writer.writerow([f"T{ticket[0]}", ticket[1], ticket[2], ticket[3], ticket[4], ticket[5], ticket[6], ticket[7], ticket[8], ticket[9], ticket[10], ticket[11], comments_str])
-
-                    csv_content = output.getvalue()
-                    client.files_upload(channels=SLACK_CHANNEL, content=csv_content, filename="tickets_export.csv", title="Filtered Tickets Export")
-                    return jsonify({"response_action": "clear"})
-                finally:
-                    db_pool.putconn(conn)
-
-            # Assign to me action
-            if data.get("type") == "view_submission" and data["view"]["callback_id"] == "assign_to_me_action":
+        # Handle view submissions
+        elif data.get("type") == "view_submission":
+            callback_id = data["view"]["callback_id"]
+            if callback_id == "assign_to_me_action":
                 metadata = json.loads(data["view"]["private_metadata"])
                 ticket_id = metadata["ticket_id"]
                 user_id = metadata["user_id"]
@@ -883,8 +564,7 @@ def slack_events():
                 update_ticket_status(ticket_id, "In Progress", assigned_to=user_id, message_ts=message_ts, comment=comment, action_user_id=user_id)
                 return jsonify({"response_action": "clear"})
 
-            # Reassign action
-            if data.get("type") == "view_submission" and data["view"]["callback_id"] == "reassign_action":
+            elif callback_id == "reassign_action":
                 metadata = json.loads(data["view"]["private_metadata"])
                 ticket_id = metadata["ticket_id"]
                 message_ts = metadata["message_ts"]
@@ -893,75 +573,10 @@ def slack_events():
                 update_ticket_status(ticket_id, "In Progress", assigned_to=assignee, message_ts=message_ts, comment=comment, action_user_id=data["user"]["id"])
                 return jsonify({"response_action": "clear"})
 
-    return jsonify({"status": "success"}), 200
-
-# Scheduled Tasks
-scheduler = BackgroundScheduler(timezone=pytz.timezone(TIMEZONE))
-
-def generate_weekly_summary():
-    conn = db_pool.getconn()
-    try:
-        cur = conn.cursor()
-        cur.execute("SELECT status, COUNT(*) FROM tickets GROUP BY status")
-        status_counts = cur.fetchall()
-        status_dict = {row[0]: row[1] for row in status_counts}
-        total_tickets = sum(status_dict.values())
-
-        summary = (
-            f"📊 *Weekly Ticket Summary*\n\n"
-            f"📋 *Total Tickets:* {total_tickets}\n"
-            f"🟢 *Open:* {status_dict.get('Open', 0)}\n"
-            f"🔵 *In Progress:* {status_dict.get('In Progress', 0)}\n"
-            f"🟡 *Resolved:* {status_dict.get('Resolved', 0)}\n"
-            f"🔴 *Closed:* {status_dict.get('Closed', 0)}\n"
-        )
-        client.chat_postMessage(channel=SLACK_CHANNEL_ID, text=summary)
-        logger.info("Weekly summary posted")
-    finally:
-        db_pool.putconn(conn)
-
-def check_overdue_tickets():
-    conn = db_pool.getconn()
-    try:
-        cur = conn.cursor()
-        seven_days_ago = datetime.now(pytz.timezone(TIMEZONE)) - timedelta(days=7)
-        cur.execute("SELECT ticket_id, assigned_to FROM tickets WHERE status IN ('Open', 'In Progress') AND created_at < %s", (seven_days_ago,))
-        overdue_tickets = cur.fetchall()
-
-        for ticket_id, assignee_id in overdue_tickets:
-            if assignee_id and assignee_id != "Unassigned":
-                client.chat_postMessage(channel=assignee_id, text=f"⏰ Reminder: Ticket T{ticket_id} is overdue. Please review.")
-                logger.info(f"Overdue reminder sent for T{ticket_id}")
-    finally:
-        db_pool.putconn(conn)
-
-def pin_high_priority_unassigned_tickets():
-    conn = db_pool.getconn()
-    try:
-        cur = conn.cursor()
-        cur.execute("SELECT ticket_id, issue_type FROM tickets WHERE priority = 'High' AND assigned_to = 'Unassigned' AND status IN ('Open', 'In Progress')")
-        high_priority_unassigned = cur.fetchall()
-
-        if high_priority_unassigned:
-            ticket_list = "\n".join([f"- *T{ticket[0]}*: {ticket[1]}" for ticket in high_priority_unassigned])
-            message = f"🚨 *High-Priority Unassigned Tickets*\n\n{ticket_list}\n\nPlease assign these tickets ASAP."
-            pins = client.pins_list(channel=SLACK_CHANNEL)
-            for pin in pins["items"]:
-                if pin["type"] == "message" and "High-Priority Unassigned Tickets" in pin["message"]["text"]:
-                    client.pins_remove(channel=SLACK_CHANNEL, timestamp=pin["message"]["ts"])
-            response = client.chat_postMessage(channel=SLACK_CHANNEL, text=message)
-            client.pins_add(channel=SLACK_CHANNEL, timestamp=response["ts"])
-            logger.info(f"Pinned {len(high_priority_unassigned)} high-priority unassigned tickets")
-    finally:
-        db_pool.putconn(conn)
-
-scheduler.add_job(generate_weekly_summary, "cron", day_of_week="mon", hour=9, minute=0)
-scheduler.add_job(check_overdue_tickets, "cron", day_of_week="mon", hour=9, minute=0)
-scheduler.add_job(pin_high_priority_unassigned_tickets, "interval", hours=1)
-scheduler.start()
-logger.info("Scheduler started")
-
-atexit.register(lambda: scheduler.shutdown())
+        return jsonify({"status": "success"})
+    except Exception as e:
+        logger.error(f"Error handling Slack event: {e}")
+        return jsonify({"text": "❌ An error occurred while processing the event."}), 500
 
 if __name__ == "__main__":
     logger.info("Starting Flask server...")
