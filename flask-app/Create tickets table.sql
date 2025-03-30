@@ -14,7 +14,16 @@ CREATE TABLE tickets (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create a function to update the updated_at column
+-- Create comments table for ticket comments
+CREATE TABLE comments (
+    comment_id SERIAL PRIMARY KEY,
+    ticket_id INTEGER REFERENCES tickets(ticket_id),
+    user_id VARCHAR(255) NOT NULL,
+    comment_text TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create the updated_at trigger function
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -23,8 +32,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Create a trigger to call the function before any update
+-- Create the trigger
 CREATE TRIGGER set_updated_at
-BEFORE UPDATE ON tickets
-FOR EACH ROW
+    BEFORE UPDATE ON tickets
+    FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column();
