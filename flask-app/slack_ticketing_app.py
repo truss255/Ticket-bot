@@ -15,7 +15,6 @@ import pytz
 
 # Initialize Flask app
 app = Flask(__name__)
-
 # Configure logging to stdout for Railway
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -48,11 +47,24 @@ logger.info(f"Using Slack channel ID: {SLACK_CHANNEL_ID}")
 
 # Verify channel access directly
 try:
-    channel_info = client.conversations_info(channel=SLACK_CHANNEL_ID)
-    logger.info("Successfully connected to channel")
+    # Try posting a test message instead of checking channel info
+    test_response = client.chat_postMessage(
+        channel=SLACK_CHANNEL_ID,
+        text="Bot connection test - please ignore",
+        as_user=True
+    )
+    if test_response["ok"]:
+        # If successful, delete the test message
+        client.chat_delete(
+            channel=SLACK_CHANNEL_ID,
+            ts=test_response["ts"]
+        )
+        logger.info("Successfully connected to channel")
 except SlackApiError as e:
     logger.error(f"Error accessing channel: {e}")
-    raise ValueError("Cannot access channel. Please verify bot is invited.")
+    if "missing_scope" in str(e):
+        logger.error("Bot needs additional permissions. Please add the following scopes: groups:read")
+    raise ValueError("Cannot access channel. Please verify bot permissions and channel access.")
 
 # Initialize database connection pool (unchanged)
 db_pool = pool.SimpleConnectionPool(1, 10, DATABASE_URL)
