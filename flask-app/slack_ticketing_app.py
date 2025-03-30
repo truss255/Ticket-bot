@@ -183,113 +183,106 @@ def send_direct_message(user_id, message):
         client.chat_postMessage(channel=ADMIN_CHANNEL, text=f"⚠️ Error sending DM to {user_id}: {e}")
 
 def build_new_ticket_modal():
-    campaign_options = [
-        {"text": {"type": "plain_text", "text": "Camp Lejeune"}, "value": "Camp Lejeune"},
-        {"text": {"type": "plain_text", "text": "Maui Wildfires"}, "value": "Maui Wildfires"},
-        {"text": {"type": "plain_text", "text": "LA Wildfire"}, "value": "LA Wildfire"},  # Fixed typo: "personally" to "type"
-        {"text": {"type": "plain_text", "text": "Depo-Provera"}, "value": "Depo-Provera"},
-        {"text": {"type": "plain_text", "text": "CPP Sick and Family Leave"}, "value": "CPP Sick and Family Leave"}
-    ]
-    issue_type_options = [
-        # 🖥️ System & Software Issues
-        {"text": {"type": "plain_text", "text": "🖥️ Salesforce Performance Issues"}, "value": "Salesforce Performance Issues"},
-        {"text": {"type": "plain_text", "text": "🖥️ Vonage Dialer Issues"}, "value": "Vonage Dialer Functionality Issues"},
-        {"text": {"type": "plain_text", "text": "🖥️ Broken Links (ARA, Co-Counsel, etc.)"}, "value": "Broken or Unresponsive Links"},
-        # 💻 Equipment & Hardware Issues
-        {"text": {"type": "plain_text", "text": "💻 Equipment & Hardware - Laptop Fails to Power On"}, "value": "Laptop Fails to Power On"},
-        {"text": {"type": "plain_text", "text": "💻 Equipment & Hardware - Slow Performance or Freezing Laptop"}, "value": "Slow Performance or Freezing Laptop"},
-        {"text": {"type": "plain_text", "text": "💻 Equipment & Hardware - Unresponsive Keyboard or Mouse"}, "value": "Unresponsive Keyboard or Mouse"},
-        {"text": {"type": "plain_text", "text": "💻 Equipment & Hardware - Headset/Microphone Malfunction (No Sound, Static, etc.)"}, "value": "Headset/Microphone Malfunction"},
-        {"text": {"type": "plain_text", "text": "💻 Equipment & Hardware - Charger or Battery Failure"}, "value": "Charger or Battery Failure"},
-        # 🔐 Security & Account Issues
-        {"text": {"type": "plain_text", "text": "🔐 Security & Account - Multi-Factor Authentication (MFA) Failure (Security Key)"}, "value": "MFA Failure"},
-        {"text": {"type": "plain_text", "text": "🔐 Security & Account - Account Lockout (Gmail or Salesforce)"}, "value": "Account Lockout"},
-        # 📑 Client & Document Issues
-        {"text": {"type": "plain_text", "text": "📑 Client & Document - Paper Packet Contains Errors or Missing Information"}, "value": "Paper Packet Errors"},
-        {"text": {"type": "plain_text", "text": "📑 Client & Document - Paper Packet Mailing Status"}, "value": "Paper Packet Mailing Status"},
-        {"text": {"type": "plain_text", "text": "📑 Client & Document - Client Information Update Request"}, "value": "Client Information Update Request"},
-        {"text": {"type": "plain_text", "text": "📑 Client & Document - Client System Error (Missing Document Request, Form Submission Failure, Broken or Unresponsive Link)"}, "value": "Client System Error"},
-        # 📊 Management-Specific System Issues
-        {"text": {"type": "plain_text", "text": "📊 Management Systems - Reports or Dashboards Failing to Load"}, "value": "Reports or Dashboards Failing to Load"},
-        {"text": {"type": "plain_text", "text": "📊 Management Systems - Automated Voicemail System Malfunction"}, "value": "Automated Voicemail System Malfunction"},
-        {"text": {"type": "plain_text", "text": "📊 Management Systems - Missing or Inaccessible Call Recordings"}, "value": "Missing or Inaccessible Call Recordings"},
-        # ❓ Other
-        {"text": {"type": "plain_text", "text": "❓ Other (Not Listed Above)"}, "value": "Other"}
-    ]
-    priority_options = [
-        {"text": {"type": "plain_text", "text": "🔵 Low"}, "value": "Low"},
-        {"text": {"type": "plain_text", "text": "🟡 Medium"}, "value": "Medium"},
-        {"text": {"type": "plain_text", "text": "🔴 High"}, "value": "High"}
-    ]
     return {
         "type": "modal",
         "callback_id": "new_ticket",
-        "title": {"type": "plain_text", "text": "Submit a New Ticket"},
+        "title": {"type": "plain_text", "text": "Create Ticket"},
         "submit": {"type": "plain_text", "text": "Submit"},
         "close": {"type": "plain_text", "text": "Cancel"},
         "blocks": [
             {
                 "type": "input",
                 "block_id": "campaign_block",
-                "label": {"type": "plain_text", "text": "📂 Campaign"},
+                "label": {"type": "plain_text", "text": "Campaign"},
                 "element": {
                     "type": "static_select",
                     "action_id": "campaign_select",
-                    "placeholder": {"type": "plain_text", "text": "Select a campaign"},
-                    "options": campaign_options
-                },
-                "optional": False
+                    "placeholder": {"type": "plain_text", "text": "Select campaign"},
+                    "options": [
+                        {
+                            "text": {"type": "plain_text", "text": "Campaign A"},
+                            "value": "campaign_a"
+                        },
+                        {
+                            "text": {"type": "plain_text", "text": "Campaign B"},
+                            "value": "campaign_b"
+                        },
+                        {
+                            "text": {"type": "plain_text", "text": "Campaign C"},
+                            "value": "campaign_c"
+                        }
+                    ]
+                }
             },
             {
                 "type": "input",
                 "block_id": "issue_type_block",
-                "label": {"type": "plain_text", "text": "📌 Issue Type"},
+                "label": {"type": "plain_text", "text": "Issue Type"},
                 "element": {
                     "type": "static_select",
                     "action_id": "issue_type_select",
-                    "placeholder": {"type": "plain_text", "text": "Select an issue type"},
-                    "options": issue_type_options
-                },
-                "optional": False
+                    "placeholder": {"type": "plain_text", "text": "Select issue type"},
+                    "options": [
+                        {
+                            "text": {"type": "plain_text", "text": "Bug"},
+                            "value": "bug"
+                        },
+                        {
+                            "text": {"type": "plain_text", "text": "Feature Request"},
+                            "value": "feature"
+                        },
+                        {
+                            "text": {"type": "plain_text", "text": "Support"},
+                            "value": "support"
+                        }
+                    ]
+                }
             },
             {
                 "type": "input",
                 "block_id": "priority_block",
-                "label": {"type": "plain_text", "text": "⚡ Priority"},
+                "label": {"type": "plain_text", "text": "Priority"},
                 "element": {
                     "type": "static_select",
                     "action_id": "priority_select",
                     "placeholder": {"type": "plain_text", "text": "Select priority"},
-                    "options": priority_options
-                },
-                "optional": False
+                    "options": [
+                        {
+                            "text": {"type": "plain_text", "text": "High"},
+                            "value": "high"
+                        },
+                        {
+                            "text": {"type": "plain_text", "text": "Medium"},
+                            "value": "medium"
+                        },
+                        {
+                            "text": {"type": "plain_text", "text": "Low"},
+                            "value": "low"
+                        }
+                    ]
+                }
             },
             {
                 "type": "input",
                 "block_id": "details_block",
-                "label": {"type": "plain_text", "text": "🗂 Details"},
+                "label": {"type": "plain_text", "text": "Details"},
                 "element": {
                     "type": "plain_text_input",
                     "action_id": "details_input",
                     "multiline": True,
                     "placeholder": {"type": "plain_text", "text": "Describe the issue"}
-                },
-                "optional": False
+                }
             },
             {
                 "type": "input",
                 "block_id": "salesforce_link_block",
-                "label": {"type": "plain_text", "text": "📎 Salesforce Link (Optional)"},
+                "label": {"type": "plain_text", "text": "Salesforce Link"},
                 "element": {
                     "type": "plain_text_input",
                     "action_id": "salesforce_link_input",
                     "placeholder": {"type": "plain_text", "text": "Paste Salesforce URL"}
                 },
                 "optional": True
-            },
-            {
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": "📂 *File Upload:* (Optional) Upload the file to Slack and include the URL in the details field."}
             }
         ]
     }
