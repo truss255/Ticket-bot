@@ -310,7 +310,8 @@ def build_new_ticket_modal():
                 "element": {
                     "type": "file_input",
                     "action_id": "file_upload_input"
-                }
+                },
+                "optional": True
             }
         ]
     }
@@ -374,12 +375,7 @@ def agent_tickets():
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f":ticket: *T{ticket_id} - {status}* {status_emoji}\n" +
-                            f":file_folder: Campaign: {campaign}\n" +
-                            f":pushpin: Issue: {issue_type}\n" +
-                            f":zap: Priority: {priority} {priority_emoji}\n" +
-                            f":bust_in_silhouette: Assigned To: {f'@{assigned_to}' if assigned_to != 'Unassigned' else ':x: Unassigned'}\n" +
-                            f":calendar: Created: {created_at.strftime('%m/%d/%Y')}"
+                    "text": f":ticket: *T{ticket_id} - {status}* {status_emoji}"
                 },
                 "accessory": {
                     "type": "button",
@@ -389,21 +385,78 @@ def agent_tickets():
                 }
             })
 
+            # Add ticket details in a more spaced out format
+            blocks.append({
+                "type": "context",
+                "elements": [
+                    {"type": "mrkdwn", "text": f":file_folder: Campaign: {campaign}"},
+                    {"type": "mrkdwn", "text": f":pushpin: Issue: {issue_type}"}
+                ]
+            })
+
+            blocks.append({
+                "type": "context",
+                "elements": [
+                    {"type": "mrkdwn", "text": f":zap: Priority: {priority} {priority_emoji}"},
+                    {"type": "mrkdwn", "text": f":bust_in_silhouette: Assigned To: {f'@{assigned_to}' if assigned_to != 'Unassigned' else ':x: Unassigned'}"},
+                    {"type": "mrkdwn", "text": f":calendar: Created: {created_at.strftime('%m/%d/%Y')}"}
+                ]
+            })
+
         # Add status explanation footer
         blocks.append({"type": "divider"})
         blocks.append({
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": "*:small_blue_diamond: Updated Features:*\n" +
-                        ":white_check_mark: Agents can track ticket progress by checking the status\n" +
-                        ":white_check_mark: Statuses are color-coded:\n\n" +
-                        ":large_green_circle: Open (Not yet assigned)\n\n" +
-                        ":large_blue_circle: In Progress (A system user is working on it)\n\n" +
-                        ":yellow_circle: Resolved (Issue fixed, but not yet closed)\n\n" +
-                        ":red_circle: Closed (No further action needed)\n" +
-                        ":white_check_mark: Clicking \"View Progress\" opens a detailed modal with updates"
-            }
+            "type": "header",
+            "text": {"type": "plain_text", "text": "🔹 Updated Features", "emoji": True}
+        })
+
+        blocks.append({
+            "type": "context",
+            "elements": [
+                {"type": "mrkdwn", "text": ":white_check_mark: Agents can track ticket progress by checking the status"}
+            ]
+        })
+
+        blocks.append({
+            "type": "context",
+            "elements": [
+                {"type": "mrkdwn", "text": ":white_check_mark: Statuses are color-coded:"}
+            ]
+        })
+
+        blocks.append({
+            "type": "context",
+            "elements": [
+                {"type": "mrkdwn", "text": ":large_green_circle: Open (Not yet assigned)"}
+            ]
+        })
+
+        blocks.append({
+            "type": "context",
+            "elements": [
+                {"type": "mrkdwn", "text": ":large_blue_circle: In Progress (A system user is working on it)"}
+            ]
+        })
+
+        blocks.append({
+            "type": "context",
+            "elements": [
+                {"type": "mrkdwn", "text": ":yellow_circle: Resolved (Issue fixed, but not yet closed)"}
+            ]
+        })
+
+        blocks.append({
+            "type": "context",
+            "elements": [
+                {"type": "mrkdwn", "text": ":red_circle: Closed (No further action needed)"}
+            ]
+        })
+
+        blocks.append({
+            "type": "context",
+            "elements": [
+                {"type": "mrkdwn", "text": ":white_check_mark: Clicking \"View Progress\" opens a detailed modal with updates"}
+            ]
         })
 
         return jsonify({
@@ -745,36 +798,55 @@ def handle_interactivity():
                     blocks = [
                         {"type": "header", "text": {"type": "plain_text", "text": "🎫 Ticket Progress", "emoji": True}},
                         {"type": "divider"},
+                        # Ticket ID and Status in a prominent section
                         {
                             "type": "section",
                             "text": {
                                 "type": "mrkdwn",
-                                "text": f":white_check_mark: *Ticket ID:* T{ticket_id}\n" +
-                                        f":file_folder: *Campaign:* {campaign}\n" +
-                                        f":pushpin: *Issue:* {issue_type}\n" +
-                                        f":zap: *Priority:* {priority} {priority_emoji}\n" +
-                                        f":bust_in_silhouette: *Assigned To:* {f'@{assigned_to}' if assigned_to != 'Unassigned' else ':x: Unassigned'}\n" +
-                                        f":arrows_counterclockwise: *Status:* {status} {status_emoji}\n" +
-                                        f":calendar: *Created On:* {created_at.strftime('%m/%d/%Y')}\n"
+                                "text": f"*T{ticket_id}* - `{status}` {status_emoji}"
                             }
                         },
-                        {"type": "divider"},
-                        {
-                            "type": "section",
-                            "text": {
-                                "type": "mrkdwn",
-                                "text": f":wrench: *Recent Updates:*\n{chr(10).join(updates)}"
-                            }
-                        },
+                        # Campaign and Issue in a context block for cleaner appearance
                         {
                             "type": "context",
                             "elements": [
-                                {
-                                    "type": "mrkdwn",
-                                    "text": ":bell: *You will receive updates when the status changes.*"
-                                }
+                                {"type": "mrkdwn", "text": f":file_folder: *Campaign:* {campaign}"},
+                                {"type": "mrkdwn", "text": f":pushpin: *Issue:* {issue_type}"}
                             ]
+                        },
+                        # Priority and Assignment in a context block
+                        {
+                            "type": "context",
+                            "elements": [
+                                {"type": "mrkdwn", "text": f":zap: *Priority:* {priority} {priority_emoji}"},
+                                {"type": "mrkdwn", "text": f":bust_in_silhouette: *Assigned To:* {f'@{assigned_to}' if assigned_to != 'Unassigned' else ':x: Unassigned'}"},
+                                {"type": "mrkdwn", "text": f":calendar: *Created:* {created_at.strftime('%m/%d/%Y')}"}
+                            ]
+                        },
+                        {"type": "divider"},
+                        # Header for updates
+                        {
+                            "type": "header",
+                            "text": {"type": "plain_text", "text": "🔧 Recent Updates", "emoji": True}
                         }
+                    ]
+
+                    # Add each update as a separate context block for better spacing
+                    for update in updates:
+                        blocks.append({
+                            "type": "context",
+                            "elements": [
+                                {"type": "mrkdwn", "text": update}
+                            ]
+                        })
+
+                    # Add notification about updates
+                    blocks.append({
+                        "type": "context",
+                        "elements": [
+                            {"type": "mrkdwn", "text": ":bell: *You will receive updates when the status changes.*"}
+                        ]
+                    })
                     ]
 
                     # Show the modal
@@ -849,11 +921,11 @@ def handle_slack_events():
                         "type": "section",
                         "text": {
                             "type": "mrkdwn",
-                            "text": f":file_folder: *Campaign:* {campaign}\n\n"
-                                    f":pushpin: *Issue:* {issue_type}\n\n"
-                                    f":zap: *Priority:* {priority} {' :red_circle:' if priority == 'High' else ' :yellow_circle:' if priority == 'Medium' else ' :large_blue_circle:'}\n\n"
-                                    f":bust_in_silhouette: *Submitted By:* <@{user_id}>\n\n"
-                                    f":arrows_counterclockwise: *Status:* `Open` :large_green_circle:\n\n"
+                            "text": f"📂 *Campaign:* {campaign}\n\n"
+                                    f"📌 *Issue:* {issue_type}\n\n"
+                                    f"⚡ *Priority:* {priority} {' 🔴' if priority == 'High' else ' 🟡' if priority == 'Medium' else ' 🔵'}\n\n"
+                                    f"👤 *Submitted By:* <@{user_id}>\n\n"
+                                    f"🔄 *Status:* `Open` 🟢\n\n"
                         }
                     },
                     {"type": "divider"},
