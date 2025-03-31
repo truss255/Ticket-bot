@@ -297,7 +297,7 @@ def build_new_ticket_modal():
             {
                 "type": "input",
                 "block_id": "salesforce_link_block",
-                "label": {"type": "plain_text", "text": "📎 Salesforce Link (Optional)"},
+                "label": {"type": "plain_text", "text": "📎 Salesforce Link"},
                 "element": {
                     "type": "plain_text_input",
                     "action_id": "salesforce_link_input",
@@ -308,7 +308,7 @@ def build_new_ticket_modal():
             {
                 "type": "input",
                 "block_id": "file_upload_block",
-                "label": {"type": "plain_text", "text": "📷 Screenshot/Image Upload (Optional)"},
+                "label": {"type": "plain_text", "text": "📷 Screenshot/Image Upload"},
                 "element": {
                     "type": "file_input",
                     "action_id": "file_upload_input"
@@ -740,7 +740,7 @@ def handle_slack_events():
                 # Post the ticket details message to the channel
                 message_blocks = [
                     {"type": "header", "text": {"type": "plain_text", "text": "🎫 Ticket Details", "emoji": True}},
-                    {"type": "section", "text": {"type": "mrkdwn", "text": f":white_check_mark: *Ticket ID:* T{ticket_id}\n\n"}},
+                    {"type": "section", "text": {"type": "mrkdwn", "text": f":white_check_mark: *Ticket ID:* T{ticket_id} {':fire:' if priority == 'High' else ':hourglass_flowing_sand:' if priority == 'Medium' else ''}\n\n"}},
                     {
                         "type": "section",
                         "text": {
@@ -749,14 +749,14 @@ def handle_slack_events():
                                     f":pushpin: *Issue:* {issue_type}\n\n"
                                     f":zap: *Priority:* {priority} {' :red_circle:' if priority == 'High' else ' :large_yellow_circle:' if priority == 'Medium' else ' :large_blue_circle:'}\n\n"
                                     f":bust_in_silhouette: *Assigned To:* :x: Unassigned\n\n"
-                                    f":gear: *Status:* Open :green_circle:\n\n"
+                                    f":gear: *Status:* `Open` :green_circle:\n\n"
                         }
                     },
                     {"type": "divider"},
                     {"type": "section", "text": {"type": "mrkdwn", "text": f":writing_hand: *Details:* {details}\n\n"}},
                     {"type": "section", "text": {"type": "mrkdwn", "text": f":link: *Salesforce Link:* {salesforce_link}\n\n"}},
                     {"type": "section", "text": {"type": "mrkdwn", "text": f":camera: *Screenshot/Image:* {f'<{file_url}|View Image>' if file_url != 'No file uploaded' else 'No image uploaded'}\n\n"}},
-                    {"type": "section", "text": {"type": "mrkdwn", "text": f":calendar: *Created Date:* {now.strftime('%m/%d/%Y')}\n\n"}},
+                    {"type": "section", "text": {"type": "mrkdwn", "text": f":calendar: *Created:* {now.strftime('%m/%d/%Y %I:%M %p')} ({now.strftime('%A')})\n\n"}},
                     {"type": "divider"},
                     {
                         "type": "actions",
@@ -766,7 +766,18 @@ def handle_slack_events():
                     }
                 ]
                 message_blocks[-1]["elements"] = [elem for elem in message_blocks[-1]["elements"] if elem]
+                # Post ticket to main channel
                 response = client.chat_postMessage(channel=SLACK_CHANNEL_ID, blocks=message_blocks)
+
+                # Send notification to admin channel
+                admin_notification = f":ticket: *New Ticket Alert* | T{ticket_id} | {priority} Priority\n" + \
+                                    f">*Issue:* {issue_type}\n" + \
+                                    f">*Submitted by:* <@{user_id}>\n" + \
+                                    f">*Campaign:* {campaign}"
+                try:
+                    client.chat_postMessage(channel=ADMIN_CHANNEL, text=admin_notification)
+                except Exception as admin_err:
+                    logger.error(f"Error sending admin notification: {admin_err}")
 
                 # Show confirmation modal to the agent
                 confirmation_view = {
@@ -776,17 +787,57 @@ def handle_slack_events():
                     "close": {"type": "plain_text", "text": "Close"},
                     "blocks": [
                         {
+                            "type": "header",
+                            "text": {"type": "plain_text", "text": "🎉 Ticket Submitted Successfully!", "emoji": True}
+                        },
+                        {
                             "type": "section",
                             "text": {
                                 "type": "mrkdwn",
-                                "text": f"🎉 *Ticket T{ticket_id} has been submitted successfully!*\n\n"
-                                        f"You can check the status of your ticket by running:\n"
-                                        f"`/agent-tickets`\n\n"
-                                        f"Your ticket details have been posted in <#{SLACK_CHANNEL_ID}>."
+                                "text": f"*Ticket ID:* T{ticket_id}\n"
+                                        f"*Campaign:* {campaign}\n"
+                                        f"*Issue Type:* {issue_type}\n"
+                                        f"*Priority:* {priority} {' 🔴' if priority == 'High' else ' 🟡' if priority == 'Medium' else ' 🔵'}"
                             }
+                        },
+                        {
+                            "type": "divider"
+                        },
+                        {
+                            "type": "section",
+                            "text": {
+                                "type": "mrkdwn",
+                                "text": f"Your ticket has been posted in <#{SLACK_CHANNEL_ID}>.\n\n"
+                                        f"You can check the status of your ticket anytime by running:\n"
+                                        f"`/agent-tickets`"
+                            }
+                        },
+                        {
+                            "type": "context",
+                            "elements": [
+                                {
+                                    "type": "mrkdwn",
+                                    "text": "✅ The Systems Team has been notified and will review your ticket shortly."
+                                }
+                            ]
                         }
                     ]
                 }
+
+                # Add image preview if a file was uploaded
+                if file_url != "No file uploaded":
+                    confirmation_view["blocks"].insert(3, {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": "*Attached Image:*"
+                        },
+                        "accessory": {
+                            "type": "image",
+                            "image_url": file_url,
+                            "alt_text": "Uploaded image"
+                        }
+                    })
                 client.views_open(trigger_id=data["trigger_id"], view=confirmation_view)
                 return jsonify({"response_action": "clear"})
             except Exception as e:
@@ -875,7 +926,63 @@ def check_overdue_tickets():
     finally:
         db_pool.putconn(conn)
 
+# Check for tickets that have been open for too long without updates
+def check_stale_tickets():
+    logger.info("Checking for stale tickets...")
+    conn = db_pool.getconn()
+    try:
+        cur = conn.cursor()
+        # Find tickets that have been open for more than 3 days without updates
+        three_days_ago = datetime.now(pytz.timezone(TIMEZONE)) - timedelta(days=3)
+        cur.execute(
+            "SELECT ticket_id, created_by, campaign, issue_type, priority, status, assigned_to, updated_at "
+            "FROM tickets "
+            "WHERE status IN ('Open', 'In Progress') AND updated_at < %s",
+            (three_days_ago,)
+        )
+        stale_tickets = cur.fetchall()
+
+        if stale_tickets:
+            # Create a message with all stale tickets
+            blocks = [
+                {"type": "header", "text": {"type": "plain_text", "text": "⚠️ Stale Tickets Alert", "emoji": True}},
+                {"type": "section", "text": {"type": "mrkdwn", "text": "The following tickets have had no updates for 3+ days:"}}
+            ]
+
+            for ticket in stale_tickets:
+                ticket_id, created_by, campaign, issue_type, priority, status, assigned_to, updated_at = ticket
+                days_stale = (datetime.now(pytz.timezone(TIMEZONE)) - updated_at).days
+
+                blocks.append({"type": "divider"})
+                blocks.append({
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"*T{ticket_id}* | {priority} Priority | {status} | {days_stale} days without updates\n"
+                                f">*Issue:* {issue_type}\n"
+                                f">*Assigned to:* {f'<@{assigned_to}>' if assigned_to != 'Unassigned' else 'Unassigned'}\n"
+                                f">*Campaign:* {campaign}"
+                    },
+                    "accessory": {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "View Ticket", "emoji": True},
+                        "value": f"view_{ticket_id}",
+                        "action_id": f"view_ticket_{ticket_id}"
+                    }
+                })
+
+            # Send the stale tickets report to the admin channel
+            client.chat_postMessage(channel=ADMIN_CHANNEL, blocks=blocks)
+            logger.info(f"Stale tickets report sent with {len(stale_tickets)} tickets")
+    except Exception as e:
+        logger.error(f"Error in stale tickets check: {e}")
+        client.chat_postMessage(channel=ADMIN_CHANNEL, text=f"⚠️ Stale tickets check failed: {e}")
+    finally:
+        db_pool.putconn(conn)
+
+# Schedule all jobs
 scheduler.add_job(check_overdue_tickets, "interval", hours=24)
+scheduler.add_job(check_stale_tickets, "interval", hours=24, start_date=datetime.now() + timedelta(minutes=30))
 scheduler.start()
 atexit.register(lambda: scheduler.shutdown())
 

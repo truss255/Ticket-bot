@@ -21,12 +21,25 @@ This Flask app is a Slack bot designed to manage tickets within a Slack workspac
 
 ## Features
 
-- **Ticket Submission**: Users can submit new tickets via the `/new-ticket` Slack command.
-- **Ticket Assignment**: System users can assign tickets to themselves or others.
+### Core Functionality
+- **Ticket Submission**: Users can submit new tickets via the `/new-ticket` Slack command with campaign, issue type, priority, and details.
+- **Screenshot Upload**: Users can attach screenshots or images directly in the ticket submission form.
+- **Ticket Assignment**: System users can assign tickets to themselves or others with optional comments.
 - **Status Updates**: Tickets can be updated to "In Progress," "Resolved," "Closed," or "Reopened."
 - **Slack Integration**: Ticket details are posted and updated in a designated Slack channel.
 - **Database Storage**: Tickets and comments are stored in a PostgreSQL database.
-- **Scheduled Tasks**: Automated tasks for weekly summaries, overdue ticket reminders, and pinning high-priority unassigned tickets.
+
+### Enhanced User Experience
+- **Rich Confirmation Messages**: Detailed confirmation modals with ticket information and image previews.
+- **Priority Indicators**: Visual indicators (🔴 High, 🟡 Medium, 🔵 Low) for ticket priorities.
+- **Status Badges**: Formatted status indicators for better visibility.
+- **Detailed Timestamps**: Precise creation and update times with day of week.
+
+### Automated Monitoring
+- **Admin Notifications**: Instant alerts to admin channel when new tickets are created.
+- **Stale Ticket Detection**: Automated detection and reporting of tickets without updates for 3+ days.
+- **Overdue Ticket Reminders**: Daily checks for tickets past their expected resolution time.
+- **Weekly Summaries**: Automated reports of ticket statistics and trends.
 
 ---
 
