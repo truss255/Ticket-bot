@@ -70,34 +70,20 @@ try:
 except Exception as e:
     logger.error(f"Error initializing Slack client: {e}")
 
-# Set Slack channel ID - Use #systems-issues channel name instead of ID
-SLACK_CHANNEL_ID = os.getenv("SLACK_CHANNEL_ID", "#systems-issues")
+# Set Slack channel ID or name
+SLACK_CHANNEL_ID = os.getenv("SLACK_CHANNEL_ID", "systems-issues")
+
+# Add # prefix if it's a channel name and doesn't already have it
+if not SLACK_CHANNEL_ID.startswith("C") and not SLACK_CHANNEL_ID.startswith("#"):
+    SLACK_CHANNEL_ID = f"#{SLACK_CHANNEL_ID}"
+
 logger.info(f"Using Slack channel: {SLACK_CHANNEL_ID}")
 
-# If it's an ID (starts with C), validate the format
-if SLACK_CHANNEL_ID.startswith("C"):
-    logger.info(f"Using channel ID format: {SLACK_CHANNEL_ID}")
-else:
-    logger.info(f"Using channel name format: {SLACK_CHANNEL_ID}")
+# Skip channel verification to avoid sending test messages
+logger.info(f"Skipping channel verification for {SLACK_CHANNEL_ID}")
 
-# Verify channel access directly
-try:
-    test_response = client.chat_postMessage(
-        channel=SLACK_CHANNEL_ID,
-        text="Bot connection test - please ignore",
-        as_user=True
-    )
-    if test_response["ok"]:
-        client.chat_delete(
-            channel=SLACK_CHANNEL_ID,
-            ts=test_response["ts"]
-        )
-        logger.info("Successfully connected to channel")
-except SlackApiError as e:
-    logger.error(f"Error accessing channel: {e}")
-    if "missing_scope" in str(e):
-        logger.error("Bot needs additional permissions. Please add the following scopes: groups:read")
-    raise ValueError("Cannot access channel. Please verify bot permissions and channel access.")
+# Just log a message instead of trying to verify channel access
+logger.info("Channel access will be verified when first message is sent")
 
 # Initialize database connection pool
 db_pool = pool.SimpleConnectionPool(1, 10, DATABASE_URL)
@@ -1726,19 +1712,47 @@ def handle_slack_events():
                     # Try different approaches for posting to the channel
                     logger.info(f"Attempting to post to channel {SLACK_CHANNEL_ID} using different methods")
 
-                    # Method 1: Use chat_postMessage with blocks and text
+                    # Try to find the channel first
                     try:
+                        # Try to find the channel by name or ID
+                        if SLACK_CHANNEL_ID.startswith('#'):
+                            # It's a channel name, try to find the ID
+                            channel_name = SLACK_CHANNEL_ID[1:]  # Remove the # prefix
+                            logger.info(f"Looking up channel ID for name: {channel_name}")
+
+                            # List all public channels
+                            channels_response = client.conversations_list(types="public_channel")
+
+                            channel_id = None
+                            for channel in channels_response["channels"]:
+                                if channel["name"] == channel_name:
+                                    channel_id = channel["id"]
+                                    logger.info(f"Found channel ID: {channel_id} for name: {channel_name}")
+                                    break
+
+                            if channel_id:
+                                # Use the channel ID for posting
+                                post_channel = channel_id
+                            else:
+                                # Fall back to the original channel name
+                                logger.warning(f"Could not find channel ID for {channel_name}, using channel name")
+                                post_channel = SLACK_CHANNEL_ID
+                        else:
+                            # It's already a channel ID
+                            post_channel = SLACK_CHANNEL_ID
+
+                        # Now post the message
                         text_fallback = f"New Ticket T{ticket_id:03d} - {issue_type} - {priority} Priority - Submitted by <@{user_id}>"
                         response = client.chat_postMessage(
-                            channel=SLACK_CHANNEL_ID,
+                            channel=post_channel,
                             blocks=message_blocks,
                             text=text_fallback  # This is shown if blocks can't be displayed
                         )
-                        logger.info(f"Method 1 successful: {response.get('ts')}")
-                    except Exception as err1:
-                        logger.error(f"Method 1 failed: {err1}")
+                        logger.info(f"Message posted successfully to {post_channel}: {response.get('ts')}")
+                    except Exception as channel_err:
+                        logger.error(f"Error posting to channel {SLACK_CHANNEL_ID}: {channel_err}")
 
-                        # Method 2: Use chat_postMessage with just text
+                        # Try a simpler approach with just text
                         try:
                             text_only = f"*New Ticket Alert* | T{ticket_id:03d} | {priority} Priority\n" + \
                                        f"*Campaign:* {campaign}\n" + \
@@ -1747,28 +1761,16 @@ def handle_slack_events():
                                        f"*Status:* Open\n" + \
                                        f"*Details:* {details[:100]}..."
 
+                            # Try posting to #general as a fallback
+                            general_channel = "#general"
                             response = client.chat_postMessage(
-                                channel=SLACK_CHANNEL_ID,
+                                channel=general_channel,
                                 text=text_only,
                                 mrkdwn=True
                             )
-                            logger.info(f"Method 2 successful: {response.get('ts')}")
-                        except Exception as err2:
-                            logger.error(f"Method 2 failed: {err2}")
-
-                            # Method 3: Try a different channel
-                            try:
-                                # Try posting to the general channel as a last resort
-                                general_channel = "#general"
-                                simple_text = f"New ticket submitted: T{ticket_id:03d} - {issue_type}"
-
-                                response = client.chat_postMessage(
-                                    channel=general_channel,
-                                    text=simple_text
-                                )
-                                logger.info(f"Method 3 successful (posted to {general_channel}): {response.get('ts')}")
-                            except Exception as err3:
-                                logger.error(f"All posting methods failed. Last error: {err3}")
+                            logger.info(f"Fallback message posted to {general_channel}: {response.get('ts')}")
+                        except Exception as fallback_err:
+                            logger.error(f"All posting methods failed. Last error: {fallback_err}")
 
                     # Send notification to admin channel
                     admin_notification = f":ticket: *New Ticket Alert* | T{ticket_id} | {priority} Priority\n" + \
