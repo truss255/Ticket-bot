@@ -15,6 +15,7 @@ import pytz
 import requests
 from dotenv import load_dotenv
 import time
+from check_db_route import add_db_check_route
 
 # Load environment variables from .env file
 load_dotenv()
@@ -116,6 +117,9 @@ def init_db():
 
 # Call init_db after pool initialization
 init_db()
+
+# Add database check route
+app = add_db_check_route(app, db_pool)
 
 # Helper Functions
 def is_system_user(user_id):
@@ -334,6 +338,7 @@ def index():
             "/api/tickets/slack/events",
             "/api/tickets/slack/url-verification",
             "/api/tickets/slack/event-subscriptions",
+            "/api/check-db",
             "/health"
         ],
         "version": "1.1.0",
