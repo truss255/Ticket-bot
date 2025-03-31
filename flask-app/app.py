@@ -16,7 +16,7 @@ import requests
 from dotenv import load_dotenv
 import time
 from check_db_route import add_db_check_route
-from ticket_templates import get_ticket_submission_blocks, get_agent_confirmation_blocks, get_ticket_updated_blocks
+from .ticket_templates import get_ticket_submission_blocks, get_agent_confirmation_blocks, get_ticket_updated_blocks
 
 # Load environment variables from .env file
 load_dotenv()
@@ -203,7 +203,7 @@ def update_ticket_status(ticket_id, status, assigned_to=None, message_ts=None, c
                                 f"📌 *Issue:* {updated_ticket[3]}\n\n"
                                 f"⚡ *Priority:* {updated_ticket[4]} {' 🔴' if updated_ticket[4] == 'High' else ' 🟡' if updated_ticket[4] == 'Medium' else ' 🔵'}\n\n"
                                 f"👤 *Assigned To:* <@{updated_ticket[6]}>\n\n"
-                                f"🔄 *Status:* `{updated_ticket[5]}` {'🟢' if updated_ticket[5] == 'Open' else '🔵' if updated_ticket[5] == 'In Progress' else '🟡' if updated_ticket[5] == 'Resolved' else '🔴'}\n\n"
+                                f"🔄 *Status:* `{updated_ticket[5]}` {'🟢' if updated_ticket[5] == "Open" else '🔵' if updated_ticket[5] == 'In Progress' else '🟡' if updated_ticket[5] == 'Resolved' else '🔴'}\n\n"
                     }
                 },
                 {"type": "divider"},
