@@ -1306,7 +1306,14 @@ def handle_interactivity():
             view_id = data.get("view", {}).get("id")
 
             # Get existing view to extract filter values
-            view_info = client.views_retrieve(view_id=view_id)
+            try:
+                # Try the newer method first
+                view_info = client.views_info(view_id=view_id)
+            except AttributeError:
+                # Fall back to older method if needed
+                logger.info("Falling back to alternative method to get view info")
+                # Just use the view data from the payload
+                view_info = {"view": data.get("view", {})}
             blocks = view_info["view"]["blocks"]
 
             # Find the filter actions block
