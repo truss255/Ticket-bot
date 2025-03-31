@@ -425,83 +425,84 @@ def handle_slack_events():
 
         # Handle ticket submission
         if data.get("type") == "view_submission" and data["view"]["callback_id"] == "new_ticket":
-            state = data["view"]["state"]["values"]
-            campaign = state["campaign_block"]["campaign_select"]["selected_option"]["value"]
-            issue_type = state["issue_type_block"]["issue_type_select"]["selected_option"]["value"]
-            priority = state["priority_block"]["priority_select"]["selected_option"]["value"]
-            details = state["details_block"]["details_input"]["value"]
-            salesforce_link = state.get("salesforce_link_block", {}).get("salesforce_link_input", {}).get("value", "N/A")
-            user_id = data["user"]["id"]
-
-            conn = db_pool.getconn()
             try:
-                cur = conn.cursor()
-                now = datetime.now(pytz.timezone(TIMEZONE))
-                cur.execute(
-                    "INSERT INTO tickets (created_by, campaign, issue_type, priority, status, assigned_to, details, salesforce_link, file_url, created_at, updated_at) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING ticket_id",
-                    (user_id, campaign, issue_type, priority, "Open", "Unassigned", details, salesforce_link, "No file uploaded", now, now)
-                )
-                ticket_id = cur.fetchone()[0]
-                conn.commit()
-            finally:
-                db_pool.putconn(conn)
+                state = data["view"]["state"]["values"]
+                campaign = state["campaign_block"]["campaign_select"]["selected_option"]["value"]
+                issue_type = state["issue_type_block"]["issue_type_select"]["selected_option"]["value"]
+                priority = state["priority_block"]["priority_select"]["selected_option"]["value"]
+                details = state["details_block"]["details_input"]["value"]
+                salesforce_link = state.get("salesforce_link_block", {}).get("salesforce_link_input", {}).get("value", "N/A")
+                user_id = data["user"]["id"]
 
-            # Post the ticket details message to the channel
-            message_blocks = [
-                {"type": "header", "text": {"type": "plain_text", "text": "🎫 Ticket Details", "emoji": True}},
-                {"type": "section", "text": {"type": "mrkdwn", "text": f":white_check_mark: *Ticket ID:* T{ticket_id}\n\n"}},
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": f":file_folder: *Campaign:* {campaign}\n\n"
-                                f":pushpin: *Issue:* {issue_type}\n\n"
-                                f":zap: *Priority:* {priority} {' :red_circle:' if priority == 'High' else ' :large_yellow_circle:' if priority == 'Medium' else ' :large_blue_circle:'}\n\n"
-                                f":bust_in_silhouette: *Assigned To:* :x: Unassigned\n\n"
-                                f":gear: *Status:* Open :green_circle:\n\n"
-                    }
-                },
-                {"type": "divider"},
-                {"type": "section", "text": {"type": "mrkdwn", "text": f":writing_hand: *Details:* {details}\n\n"}},
-                {"type": "section", "text": {"type": "mrkdwn", "text": f":link: *Salesforce Link:* {salesforce_link}\n\n"}},
-                {"type": "section", "text": {"type": "mrkdwn", "text": f":file_folder: *File Attachment:* No file uploaded\n\n"}},
-                {"type": "section", "text": {"type": "mrkdwn", "text": f":calendar: *Created Date:* {now.strftime('%m/%d/%Y')}\n\n"}},
-                {"type": "divider"},
-                {
-                    "type": "actions",
-                    "elements": [
-                        {"type": "button", "text": {"type": "plain_text", "text": "🖐 Assign to Me", "emoji": True}, "action_id": f"assign_to_me_{ticket_id}", "value": str(ticket_id), "style": "primary"} if is_system_user(user_id) else None
-                    ]
-                }
-            ]
-            message_blocks[-1]["elements"] = [elem for elem in message_blocks[-1]["elements"] if elem]
-            response = client.chat_postMessage(channel=SLACK_CHANNEL_ID, blocks=message_blocks)
+                conn = db_pool.getconn()
+                try:
+                    cur = conn.cursor()
+                    now = datetime.now(pytz.timezone(TIMEZONE))
+                    cur.execute(
+                        "INSERT INTO tickets (created_by, campaign, issue_type, priority, status, assigned_to, details, salesforce_link, file_url, created_at, updated_at) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING ticket_id",
+                        (user_id, campaign, issue_type, priority, "Open", "Unassigned", details, salesforce_link, "No file uploaded", now, now)
+                    )
+                    ticket_id = cur.fetchone()[0]
+                    conn.commit()
+                finally:
+                    db_pool.putconn(conn)
 
-            # Show confirmation modal to the agent
-            confirmation_view = {
-                "type": "modal",
-                "callback_id": "ticket_confirmation",
-                "title": {"type": "plain_text", "text": "Ticket Submitted"},
-                "close": {"type": "plain_text", "text": "Close"},
-                "blocks": [
+                # Post the ticket details message to the channel
+                message_blocks = [
+                    {"type": "header", "text": {"type": "plain_text", "text": "🎫 Ticket Details", "emoji": True}},
+                    {"type": "section", "text": {"type": "mrkdwn", "text": f":white_check_mark: *Ticket ID:* T{ticket_id}\n\n"}},
                     {
                         "type": "section",
                         "text": {
                             "type": "mrkdwn",
-                            "text": f"🎉 *Ticket T{ticket_id} has been submitted successfully!*\n\n"
-                                    f"You can check the status of your ticket by running:\n"
-                                    f"`/agent-tickets`\n\n"
-                                    f"Your ticket details have been posted in <#{SLACK_CHANNEL_ID}>."
+                            "text": f":file_folder: *Campaign:* {campaign}\n\n"
+                                    f":pushpin: *Issue:* {issue_type}\n\n"
+                                    f":zap: *Priority:* {priority} {' :red_circle:' if priority == 'High' else ' :large_yellow_circle:' if priority == 'Medium' else ' :large_blue_circle:'}\n\n"
+                                    f":bust_in_silhouette: *Assigned To:* :x: Unassigned\n\n"
+                                    f":gear: *Status:* Open :green_circle:\n\n"
                         }
+                    },
+                    {"type": "divider"},
+                    {"type": "section", "text": {"type": "mrkdwn", "text": f":writing_hand: *Details:* {details}\n\n"}},
+                    {"type": "section", "text": {"type": "mrkdwn", "text": f":link: *Salesforce Link:* {salesforce_link}\n\n"}},
+                    {"type": "section", "text": {"type": "mrkdwn", "text": f":file_folder: *File Attachment:* No file uploaded\n\n"}},
+                    {"type": "section", "text": {"type": "mrkdwn", "text": f":calendar: *Created Date:* {now.strftime('%m/%d/%Y')}\n\n"}},
+                    {"type": "divider"},
+                    {
+                        "type": "actions",
+                        "elements": [
+                            {"type": "button", "text": {"type": "plain_text", "text": "🖐 Assign to Me", "emoji": True}, "action_id": f"assign_to_me_{ticket_id}", "value": str(ticket_id), "style": "primary"} if is_system_user(user_id) else None
+                        ]
                     }
                 ]
-            }
-            client.views_open(trigger_id=data["trigger_id"], view=confirmation_view)
-            return jsonify({"response_action": "clear"})
-        except Exception as e:
-            logger.error(f"Error in new_ticket submission: {e}")
-            return jsonify({"text": "❌ Ticket submission failed"}), 500
+                message_blocks[-1]["elements"] = [elem for elem in message_blocks[-1]["elements"] if elem]
+                response = client.chat_postMessage(channel=SLACK_CHANNEL_ID, blocks=message_blocks)
+
+                # Show confirmation modal to the agent
+                confirmation_view = {
+                    "type": "modal",
+                    "callback_id": "ticket_confirmation",
+                    "title": {"type": "plain_text", "text": "Ticket Submitted"},
+                    "close": {"type": "plain_text", "text": "Close"},
+                    "blocks": [
+                        {
+                            "type": "section",
+                            "text": {
+                                "type": "mrkdwn",
+                                "text": f"🎉 *Ticket T{ticket_id} has been submitted successfully!*\n\n"
+                                        f"You can check the status of your ticket by running:\n"
+                                        f"`/agent-tickets`\n\n"
+                                        f"Your ticket details have been posted in <#{SLACK_CHANNEL_ID}>."
+                            }
+                        }
+                    ]
+                }
+                client.views_open(trigger_id=data["trigger_id"], view=confirmation_view)
+                return jsonify({"response_action": "clear"})
+            except Exception as e:
+                logger.error(f"Error in new_ticket submission: {e}")
+                return jsonify({"text": "❌ Ticket submission failed"}), 500
 
         # Handle assign-to-me action submission
         elif data.get("type") == "view_submission" and data["view"]["callback_id"] == "assign_to_me_action":
