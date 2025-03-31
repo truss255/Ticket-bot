@@ -285,7 +285,7 @@ def build_new_ticket_modal():
             {
                 "type": "input",
                 "block_id": "details_block",
-                "label": {"type": "plain_text", "text": "🗂 Details"},
+                "label": {"type": "plain_text", "text": "✏️ Details"},
                 "element": {
                     "type": "plain_text_input",
                     "action_id": "details_input",
@@ -306,8 +306,14 @@ def build_new_ticket_modal():
                 "optional": True
             },
             {
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": "📂 *File Upload:* (Optional) Upload the file to Slack and include the file URL in the details field."}
+                "type": "input",
+                "block_id": "file_upload_block",
+                "label": {"type": "plain_text", "text": "📎 File Upload (Optional)"},
+                "element": {
+                    "type": "file_input",
+                    "action_id": "file_upload_input"
+                },
+                "optional": True
             }
         ]
     }
@@ -702,6 +708,21 @@ def handle_slack_events():
                 salesforce_link = state.get("salesforce_link_block", {}).get("salesforce_link_input", {}).get("value", "N/A")
                 user_id = data["user"]["id"]
 
+                # Check for file upload
+                file_url = "No file uploaded"
+                if "file_upload_block" in state and "file_upload_input" in state["file_upload_block"]:
+                    file_info = state["file_upload_block"]["file_upload_input"]
+                    if file_info and "files" in file_info and len(file_info["files"]) > 0:
+                        file_id = file_info["files"][0]["id"]
+                        # Get file info from Slack API
+                        try:
+                            file_response = client.files_info(file=file_id)
+                            if file_response and file_response["ok"]:
+                                file_url = file_response["file"]["url_private"]
+                                logger.info(f"File uploaded: {file_url}")
+                        except Exception as file_err:
+                            logger.error(f"Error getting file info: {file_err}")
+
                 conn = db_pool.getconn()
                 try:
                     cur = conn.cursor()
@@ -709,7 +730,7 @@ def handle_slack_events():
                     cur.execute(
                         "INSERT INTO tickets (created_by, campaign, issue_type, priority, status, assigned_to, details, salesforce_link, file_url, created_at, updated_at) "
                         "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING ticket_id",
-                        (user_id, campaign, issue_type, priority, "Open", "Unassigned", details, salesforce_link, "No file uploaded", now, now)
+                        (user_id, campaign, issue_type, priority, "Open", "Unassigned", details, salesforce_link, file_url, now, now)
                     )
                     ticket_id = cur.fetchone()[0]
                     conn.commit()
@@ -734,7 +755,7 @@ def handle_slack_events():
                     {"type": "divider"},
                     {"type": "section", "text": {"type": "mrkdwn", "text": f":writing_hand: *Details:* {details}\n\n"}},
                     {"type": "section", "text": {"type": "mrkdwn", "text": f":link: *Salesforce Link:* {salesforce_link}\n\n"}},
-                    {"type": "section", "text": {"type": "mrkdwn", "text": f":file_folder: *File Attachment:* No file uploaded\n\n"}},
+                    {"type": "section", "text": {"type": "mrkdwn", "text": f":file_folder: *File Attachment:* {f'<{file_url}|View File>' if file_url != 'No file uploaded' else 'No file uploaded'}\n\n"}},
                     {"type": "section", "text": {"type": "mrkdwn", "text": f":calendar: *Created Date:* {now.strftime('%m/%d/%Y')}\n\n"}},
                     {"type": "divider"},
                     {
