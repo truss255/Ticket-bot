@@ -1,213 +1,235 @@
-# Ticket Management Slack Bot
+# Ticket Bot
 
-This Flask app is a Slack bot designed to manage tickets within a Slack workspace. It allows users to submit new tickets via a Slack modal, assign tickets to system users, update ticket statuses, and post ticket details to a designated Slack channel. The app uses a PostgreSQL database to store ticket information and comments.
-
----
-
-## Table of Contents
-
-- [Features](#features)
-- [Setup Instructions](#setup-instructions)
-  - [Environment Variables](#environment-variables)
-  - [Database Setup](#database-setup)
-- [Usage](#usage)
-  - [Slack Commands](#slack-commands)
-  - [Interacting with Ticket Messages](#interacting-with-ticket-messages)
-- [Scheduled Tasks](#scheduled-tasks)
-- [Deployment on Railway](#deployment-on-railway)
-- [License](#license)
-
----
+A Slack-integrated Flask application for managing support tickets, designed to streamline issue reporting and resolution for agents and system users. Features include ticket submission with file uploads, ticket management, CSV export, and automated notifications for overdue and stale tickets.
 
 ## Features
+- **Ticket Submission**: Agents can submit tickets via a Slack modal with details like campaign, issue type, priority, and optional file attachments.
+- **Agent View**: Agents can view their submitted tickets with filtering options (`/agent-tickets`).
+- **System User View**: System users can manage all tickets, assign/reassign them, and export to CSV (`/system-tickets`).
+- **Export Functionality**: System users can export tickets to CSV with customizable filters (status, priority, date range).
+- **Scheduled Tasks**: Automated checks for overdue (7+ days) and stale (3+ days without updates) tickets, with notifications sent via Slack.
+- **Slack Integration**: Fully integrated with Slack for modals, messages, and file uploads.
 
-### Core Functionality
-- **Ticket Submission**: Users can submit new tickets via the `/new-ticket` Slack command with campaign, issue type, priority, and details.
-- **Screenshot Upload**: Users can attach screenshots or images directly in the ticket submission form.
-- **Ticket Assignment**: System users can assign tickets to themselves or others with optional comments.
-- **Status Updates**: Tickets can be updated to "In Progress," "Resolved," "Closed," or "Reopened."
-- **Slack Integration**: Ticket details are posted and updated in a designated Slack channel.
-- **Database Storage**: Tickets and comments are stored in a PostgreSQL database.
+## Prerequisites
+- **Python**: Version 3.8 or higher.
+- **PostgreSQL**: A running PostgreSQL database for ticket storage.
+- **Slack App**: A Slack app with a bot token and the following scopes:
+  - `chat:write`
+  - `files:write`
+  - `users:read`
+  - Additional scopes may be needed for specific features (e.g., `channels:read` for channel validation).
+- **Git**: For version control and deployment (optional).
 
-### Enhanced User Experience
-- **Rich Confirmation Messages**: Detailed confirmation modals with ticket information and image previews.
-- **Priority Indicators**: Visual indicators (🔴 High, 🟡 Medium, 🔵 Low) for ticket priorities.
-- **Status Badges**: Formatted status indicators for better visibility.
-- **Detailed Timestamps**: Precise creation and update times with day of week.
+## Project Structure
+your_project/
+├── app.py              # Main Flask application
+├── check_db_route.py   # Database check endpoint
+├── ticket_templates.py # Slack block and modal templates
+├── .env                # Environment variables (not tracked)
+├── requirements.txt    # Python dependencies
+├── Procfile            # Deployment process definitions
+└── .gitignore          # Git ignore file
 
-### Automated Monitoring
-- **Admin Notifications**: Instant alerts to admin channel when new tickets are created.
-- **Stale Ticket Detection**: Automated detection and reporting of tickets without updates for 3+ days.
-- **Overdue Ticket Reminders**: Daily checks for tickets past their expected resolution time.
-- **Weekly Summaries**: Automated reports of ticket statistics and trends.
+text
+
+Collapse
+
+Wrap
+
+Copy
+
+## Setup Instructions (Local Development)
+
+1. **Clone the Repository** (if using Git):
+   ```bash
+   git clone <your-repo-url>
+   cd your_project
+Or manually create the directory and add the files.
+
+Install Dependencies:
+Ensure you have Python installed.
+Install required packages:
+bash
+
+Collapse
+
+Wrap
+
+Copy
+pip install -r requirements.txt
+Configure Environment Variables:
+Create a .env file in the project root:
+text
+
+Collapse
+
+Wrap
+
+Copy
+SLACK_BOT_TOKEN=xoxb-your-slack-bot-token-here
+DATABASE_URL=postgresql://user:password@host:port/dbname
+ADMIN_CHANNEL=#admin-notifications
+TIMEZONE=America/New_York
+SYSTEM_USERS=U12345678,U98765432
+SLACK_CHANNEL_ID=C08JTKR1RPT
+PORT=8080
+Replace placeholders:
+SLACK_BOT_TOKEN: Get from your Slack app’s "OAuth & Permissions" page.
+DATABASE_URL: Your PostgreSQL connection string (e.g., postgresql://postgres:password@localhost:5432/tickets).
+SYSTEM_USERS: Comma-separated Slack user IDs for system users.
+SLACK_CHANNEL_ID: The ID of your #systems-issues channel (starts with C).
+Set Up PostgreSQL:
+Create a database matching your DATABASE_URL.
+The app will initialize tables (tickets and comments) on first run.
+Run the Application:
+Start the Flask server:
+bash
+
+Collapse
+
+Wrap
+
+Copy
+python app.py
+The app will run on http://0.0.0.0:8080 (or your specified PORT).
+Deployment Instructions (Railway)
+Prepare for Deployment:
+Ensure all files are in your project directory (see Project Structure).
+Commit changes to Git:
+bash
+
+Collapse
+
+Wrap
+
+Copy
+git init
+git add .
+git commit -m "Initial commit"
+git remote add origin <your-github-repo-url>
+git push origin main
+Set Up Railway:
+Log in to Railway.
+Create a new project and link your GitHub repository.
+Add a PostgreSQL service:
+Go to "New" > "Database" > "PostgreSQL".
+Copy the DATABASE_URL from the database settings.
+Configure Environment Variables:
+In your Railway project, go to "Variables" and add:
+text
+
+Collapse
+
+Wrap
+
+Copy
+SLACK_BOT_TOKEN=xoxb-your-slack-bot-token-here
+DATABASE_URL=<from-railway-postgres>
+ADMIN_CHANNEL=#admin-notifications
+TIMEZONE=America/New_York
+SYSTEM_USERS=U12345678,U98765432
+SLACK_CHANNEL_ID=C08JTKR1RPT
+PORT=8080
+Deploy:
+Railway will detect the Procfile and deploy two processes:
+web: Runs the Flask app with Gunicorn for HTTP requests.
+worker: Runs background tasks (APScheduler).
+Monitor logs in the Railway dashboard to confirm deployment.
+Usage
+Submit a Ticket:
+In Slack, run /new-ticket to open the submission modal.
+Fill in details and submit. A confirmation modal will appear, and the ticket will post to #systems-issues.
+View Your Tickets:
+Run /agent-tickets to see your submitted tickets with filtering options.
+Manage Tickets (System Users):
+Run /system-tickets to view all tickets, assign/reassign, resolve, close, or export them.
+Click "Export" to open the export modal, apply filters, and receive a CSV file in your DM.
+Scheduled Notifications:
+Overdue tickets (7+ days) notify assignees daily.
+Stale tickets (3+ days without updates) notify the admin channel daily.
+Files
+app.py: Core Flask app with routes, Slack integration, and scheduled tasks.
+check_db_route.py: Adds /api/check-db endpoint to verify database connectivity.
+ticket_templates.py: Defines Slack block templates for ticket messages and modals (e.g., submission, confirmation, export).
+.env: Stores sensitive environment variables (not tracked in Git).
+requirements.txt: Lists Python dependencies:
+text
+
+Collapse
+
+Wrap
+
+Copy
+flask==2.3.2
+slack-sdk==3.21.3
+psycopg2-binary==2.9.6
+python-dotenv==1.0.0
+apscheduler==3.10.1
+requests==2.31.0
+gunicorn==20.1.0
+Procfile: Defines deployment processes for Railway:
+text
+
+Collapse
+
+Wrap
+
+Copy
+web: gunicorn app:app
+worker: python app.py
+.gitignore: Excludes sensitive or temporary files:
+text
+
+Collapse
+
+Wrap
+
+Copy
+.env
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+*.log
+Troubleshooting
+Slack Errors: Ensure the bot token has required scopes and is added to relevant channels.
+Database Issues: Verify DATABASE_URL and PostgreSQL connectivity with /api/check-db.
+Deployment Failures: Check Railway logs for errors (e.g., missing variables, dependency issues).
+Contributing
+Feel free to fork this repository, submit pull requests, or report issues.
+
+License
+MIT License
+
+text
+
+Collapse
+
+Wrap
+
+Copy
 
 ---
 
-## Setup Instructions
-
-### Project Structure
-
-The application consists of the following key files:
-
-- **`app.py`**: The main application file containing all the routes and business logic.
-- **`ticket_templates.py`**: Contains template functions for formatting ticket messages in Slack.
-- **`check_db_route.py`**: Utility for checking database tables and their contents.
-- **`fix_app.py`**: Utility script to fix syntax errors in app.py.
-
-### Environment Variables
-
-The following environment variables must be set for the app to function correctly:
-
-- **`SLACK_BOT_TOKEN`**: The token for your Slack bot. Obtain this from your Slack app's settings.
-- **`DATABASE_URL`**: The connection string for your PostgreSQL database. On Railway, this will be provided when you provision a PostgreSQL database.
-- **`ADMIN_CHANNEL`**: The Slack channel where error notifications will be posted (e.g., `#admin-notifications`).
-- **`TIMEZONE`**: Your preferred timezone (e.g., `America/New_York`).
-- **`SYSTEM_USERS`**: A comma-separated list of Slack user IDs who have system privileges (e.g., `U12345678,U87654321`).
-
-On Railway, set these variables in your project's environment settings.
-
-### Database Setup
-
-The app includes an `init_db()` function that creates the necessary database tables. After setting up the database connection, this function is called automatically to initialize the schema.
+### Instructions
+1. **Create the File**:
+   - In VS Code, right-click in your project directory, select "New File," and name it `README.md`.
+2. **Copy and Paste**:
+   - Copy the entire content above (from `# Ticket Bot` to `MIT License`) and paste it into `README.md`.
+3. **Customize**:
+   - Replace `<your-repo-url>` with your actual GitHub repository URL if applicable.
+   - Update any placeholders (e.g., Slack token, user IDs) with real examples or leave them as-is for documentation.
+4. **Save**:
+   - Save the file in your project directory.
 
 ---
 
-## Usage
+### Notes
+- **Purpose**: This `README.md` serves as both user documentation and developer setup instructions, making it easy to onboard others or remind yourself of the setup process.
+- **Deployment Focus**: It assumes Railway as a potential deployment platform due to your script’s logging comment, but it’s flexible for other platforms.
+- **Completeness**: Covers all aspects of your current project, including the export feature and scheduled tasks.
 
-### Slack Commands
-
-- **`/new-ticket`**: Opens a modal for submitting a new ticket. Users can select a campaign, issue type, priority, and provide details.
-- **`/agent-tickets`**: Displays a modal showing the user's submitted tickets, including their status and details.
-- **`/system-tickets`**: Displays all tickets in the system (only available to system users).
-- **`/ticket-summary`**: Shows a summary of ticket statistics (only available to system users).
-
-### Ticket Message Formats
-
-#### System Issues Channel Message
-
-```
-🎫 New Ticket Created! (T001)
-----------------------------
-
-📂 Campaign: Camp Lejeune    📌 Issue: Salesforce Freeze
-⚡ Priority: 🔴 High          👤 Assigned To: ❌ Unassigned
-🔄 Status: 🟢 Open            👤 Submitted By: @Tanya.Russell
-
-✏️ Details: Salesforce is not loading for multiple agents.
-
-🔗 Salesforce Link: Click Here
-📷 File Attachment: View Screenshot
-----------------------------
-
-🔘 Assign to Me
-```
-
-#### Agent Confirmation Message
-
-```
-✅ Ticket Submitted Successfully!
-
-🎟️ Ticket ID: T001
-📂 Campaign: Camp Lejeune
-📌 Issue Type: Salesforce Freeze
-⚡ Priority: 🔴 High
-
-📣 Your ticket has been posted in `#systems-issues`.
-👀 The systems team has been notified and will review it shortly.
-📊 You can check your ticket status anytime using: `/agent-tickets`
-```
-
-### Interacting with Ticket Messages
-
-System users can interact with ticket messages in the Slack channel using the following buttons:
-
-- **🖐 Assign to Me**: Assigns the ticket to the user and updates the status to "In Progress."
-- **🔁 Reassign**: Opens a modal to select a new assignee.
-- **❌ Close**: Updates the ticket status to "Closed."
-- **🟢 Resolve**: Updates the ticket status to "Resolved."
-- **🔄 Reopen**: Updates the ticket status to "Open."
-
----
-
-## Scheduled Tasks
-
-The app includes the following scheduled tasks, managed by APScheduler:
-
-- **Weekly Summary**: Posts a summary of ticket statuses to the Slack channel every Monday at 9:00 AM.
-- **Overdue Ticket Check**: Sends reminders to assignees of tickets that have been open or in progress for more than 7 days.
-- **High-Priority Pinning**: Pins a message in the Slack channel listing high-priority unassigned tickets, updated every hour.
-
----
-
-## Deployment on Railway
-
-To deploy this app on Railway:
-
-### Fixing Syntax Errors
-
-If you encounter a syntax error with an unmatched closing bracket `]`, use the provided `fix_app.py` script:
-
-```
-cd flask-app
-python fix_app.py
-```
-
-Alternatively, you can manually fix the issue by editing app.py and replacing the message blocks code (around line 1708) with:
-
-```python
-# Use the template to create the ticket submission message blocks
-logger.info(f"Creating ticket submission blocks using template for ticket ID: {ticket_id}")
-message_blocks = get_ticket_submission_blocks(
-    ticket_id=ticket_id,
-    campaign=campaign,
-    issue_type=issue_type,
-    priority=priority,
-    user_id=user_id,
-    details=details,
-    salesforce_link=salesforce_link,
-    file_url=file_url
-)
-```
-
-### Deployment Steps
-
-1. **Create a Railway Project**:
-   - Link your GitHub repository to a new Railway project.
-
-2. **Provision a PostgreSQL Database**:
-   - Add a PostgreSQL database to your Railway project.
-   - Copy the provided `DATABASE_URL` for use in environment variables.
-
-3. **Set Environment Variables**:
-   - In your Railway project settings, add the following variables:
-     - `SLACK_BOT_TOKEN` - Your Slack bot token (starts with `xoxb-`)
-     - `DATABASE_URL` (from the provisioned database)
-     - `ADMIN_CHANNEL` - The Slack channel for admin notifications (e.g., `#admin-notifications`)
-     - `TIMEZONE` - Your preferred timezone (e.g., `America/New_York`)
-     - `SYSTEM_USERS` - A comma-separated list of Slack user IDs who have admin privileges
-
-4. **Deploy the App**:
-   - Railway will automatically detect the Flask app and deploy it.
-   - Ensure your `requirements.txt` is up-to-date with all dependencies (e.g., `flask`, `slack_sdk`, `psycopg2-binary`, `apscheduler`, `pytz`, `python-dotenv`).
-
-5. **Configure Slack App**:
-   - Create a Slack App in the [Slack API Console](https://api.slack.com/apps)
-   - Under "Slash Commands", add the following commands:
-     - `/new-ticket` - URL: `https://your-app-url.com/api/tickets/new-ticket`
-     - `/agent-tickets` - URL: `https://your-app-url.com/api/tickets/agent-tickets`
-     - `/system-tickets` - URL: `https://your-app-url.com/api/tickets/system-tickets`
-     - `/ticket-summary` - URL: `https://your-app-url.com/api/tickets/ticket-summary`
-   - Under "Interactivity & Shortcuts", enable Interactivity and set the Request URL to: `https://your-app-url.com/api/tickets/slack/events`
-   - Under "Event Subscriptions", enable Events and set the Request URL to: `https://your-app-url.com/api/tickets/slack/events`
-   - Under "OAuth & Permissions", add the necessary scopes: `channels:history`, `channels:read`, `chat:write`, `commands`, `files:read`, `groups:write`, `im:history`, `im:write`, `pins:write`, `users:read`, `groups:read`
-   - Install the app to your workspace
-
-6. **Verify Deployment**:
-   - Check the Railway logs to ensure the app starts correctly and the database schema is initialized.
-   - Test the slash commands in Slack to make sure they work correctly.
-
----
-
-## License
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+If you need adjustments (e.g., a different deployment platform, more detailed usage examples), let me know,
