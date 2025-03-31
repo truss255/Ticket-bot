@@ -5,3 +5,4 @@ gunicorn
 apscheduler
 requests
 pytz
+python-dotenv

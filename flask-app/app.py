@@ -13,6 +13,10 @@ from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
 import pytz
 import requests
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)
