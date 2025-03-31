@@ -165,36 +165,34 @@ def update_ticket_status(ticket_id, status, assigned_to=None, message_ts=None, c
             comments_str = "\n".join([f"<@{c[0]}>: {c[1]} ({c[2].strftime('%m/%d/%Y %H:%M:%S')})" for c in comments]) or "N/A"
 
             message_blocks = [
-                {"type": "header", "text": {"type": "plain_text", "text": "🎫 Ticket Details"}},
-                {"type": "section", "text": {"type": "mrkdwn", "text": f"✅ *Ticket ID:* T{updated_ticket[0]}\n\n"}},
+                {"type": "header", "text": {"type": "plain_text", "text": "🎫 Ticket Updated", "emoji": True}},
+                {"type": "section", "text": {"type": "mrkdwn", "text": f":ticket: *Ticket Updated* | T{updated_ticket[0]} | {updated_ticket[4]} Priority {':fire:' if updated_ticket[4] == 'High' else ':hourglass_flowing_sand:' if updated_ticket[4] == 'Medium' else ''}\n\n"}},
                 {
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
                         "text": f"📂 *Campaign:* {updated_ticket[2]}\n\n"
                                 f"📌 *Issue:* {updated_ticket[3]}\n\n"
-                                f"⚡ *Priority:* {updated_ticket[4]} {'🔴' if updated_ticket[4] == 'High' else '🟡' if updated_ticket[4] == 'Medium' else '🔵'}\n\n"
-                                f"👤 *Assigned To:* {updated_ticket[6] if updated_ticket[6] != 'Unassigned' else '❌ Unassigned'}\n\n"
-                                f"🔄 *Status:* {updated_ticket[5]} {'🟢' if updated_ticket[5] == 'Open' else '🔵' if updated_ticket[5] == 'In Progress' else '🟡' if updated_ticket[5] == 'Resolved' else '🔴'}\n\n"
+                                f"⚡ *Priority:* {updated_ticket[4]} {' 🔴' if updated_ticket[4] == 'High' else ' 🟡' if updated_ticket[4] == 'Medium' else ' 🔵'}\n\n"
+                                f"👤 *Assigned To:* <@{updated_ticket[6]}>\n\n"
+                                f"🔄 *Status:* `{updated_ticket[5]}` {'🟢' if updated_ticket[5] == 'Open' else '🔵' if updated_ticket[5] == 'In Progress' else '🟡' if updated_ticket[5] == 'Resolved' else '🔴'}\n\n"
                     }
                 },
                 {"type": "divider"},
-                {
-                    "type": "section",
-                    "text": {"type": "mrkdwn", "text": f"🖋️ *Details:* {updated_ticket[7]}\n\n🔗 *Salesforce Link:* {updated_ticket[8] or 'N/A'}\n\n"}
-                },
-                {"type": "section", "text": {"type": "mrkdwn", "text": f"📂 *File Attachment:* {updated_ticket[9]}\n\n"}},
-                {"type": "section", "text": {"type": "mrkdwn", "text": f"📅 *Created Date:* {updated_ticket[10].strftime('%m/%d/%Y')}\n\n"}},
+                {"type": "section", "text": {"type": "mrkdwn", "text": f"✏️ *Details:* {updated_ticket[7]}\n\n"}},
+                {"type": "section", "text": {"type": "mrkdwn", "text": f":link: *Salesforce Link:* {updated_ticket[8] or 'N/A'}\n\n"}},
+                {"type": "section", "text": {"type": "mrkdwn", "text": f":camera: *Screenshot/Image:* {f'<{updated_ticket[9]}|View Image>' if updated_ticket[9] != 'No file uploaded' else 'No image uploaded'}\n\n"}},
+                {"type": "section", "text": {"type": "mrkdwn", "text": f"📅 *Created:* {updated_ticket[10].strftime('%m/%d/%Y %I:%M %p')} ({updated_ticket[10].strftime('%A')})\n\n"}},
                 {"type": "section", "text": {"type": "mrkdwn", "text": f"💬 *Comments:* {comments_str}\n\n"}},
                 {"type": "divider"},
                 {
                     "type": "actions",
                     "elements": [
-                        {"type": "button", "text": {"type": "plain_text", "text": "🖐 Assign to Me"}, "action_id": f"assign_to_me_{ticket_id}", "value": str(ticket_id), "style": "primary"} if is_system_user(action_user_id) and updated_ticket[5] == "Open" and updated_ticket[6] == "Unassigned" else None,
-                        {"type": "button", "text": {"type": "plain_text", "text": "🔁 Reassign"}, "action_id": f"reassign_{ticket_id}", "value": str(ticket_id), "style": "primary"} if is_system_user(action_user_id) and updated_ticket[5] in ["Open", "In Progress"] else None,
-                        {"type": "button", "text": {"type": "plain_text", "text": "❌ Close"}, "action_id": f"close_{ticket_id}", "value": str(ticket_id), "style": "danger"} if is_system_user(action_user_id) and updated_ticket[5] in ["Open", "In Progress"] else None,
-                        {"type": "button", "text": {"type": "plain_text", "text": "🟢 Resolve"}, "action_id": f"resolve_{ticket_id}", "value": str(ticket_id), "style": "primary"} if is_system_user(action_user_id) and updated_ticket[5] in ["Open", "In Progress"] else None,
-                        {"type": "button", "text": {"type": "plain_text", "text": "🔄 Reopen"}, "action_id": f"reopen_{ticket_id}", "value": str(ticket_id)} if is_system_user(action_user_id) and updated_ticket[5] in ["Closed", "Resolved"] else None
+                        {"type": "button", "text": {"type": "plain_text", "text": "🖐 Assign to Me", "emoji": True}, "action_id": f"assign_to_me_{ticket_id}", "value": str(ticket_id), "style": "primary"} if is_system_user(action_user_id) and updated_ticket[5] == "Open" and updated_ticket[6] == "Unassigned" else None,
+                        {"type": "button", "text": {"type": "plain_text", "text": "🔁 Reassign", "emoji": True}, "action_id": f"reassign_{ticket_id}", "value": str(ticket_id), "style": "primary"} if is_system_user(action_user_id) and updated_ticket[5] in ["Open", "In Progress"] else None,
+                        {"type": "button", "text": {"type": "plain_text", "text": "❌ Close", "emoji": True}, "action_id": f"close_{ticket_id}", "value": str(ticket_id), "style": "danger"} if is_system_user(action_user_id) and updated_ticket[5] in ["Open", "In Progress"] else None,
+                        {"type": "button", "text": {"type": "plain_text", "text": "🟢 Resolve", "emoji": True}, "action_id": f"resolve_{ticket_id}", "value": str(ticket_id), "style": "primary"} if is_system_user(action_user_id) and updated_ticket[5] in ["Open", "In Progress"] else None,
+                        {"type": "button", "text": {"type": "plain_text", "text": "🔄 Reopen", "emoji": True}, "action_id": f"reopen_{ticket_id}", "value": str(ticket_id)} if is_system_user(action_user_id) and updated_ticket[5] in ["Closed", "Resolved"] else None
                     ]
                 }
             ]
@@ -361,26 +359,53 @@ def agent_tickets():
         blocks = [
             {
                 "type": "header",
-                "text": {"type": "plain_text", "text": "Your Tickets"}
+                "text": {"type": "plain_text", "text": "🗂️ Your Submitted Tickets"}
             }
         ]
 
         for ticket in tickets:
             ticket_id, created_by, campaign, issue_type, priority, status, assigned_to, details, salesforce_link, file_url, created_at, updated_at = ticket
+
+            # Define status emoji
+            status_emoji = "🟢" if status == "Open" else "🔵" if status == "In Progress" else "🟡" if status == "Resolved" else "🔴"
+            priority_emoji = "🔴" if priority == "High" else "🟡" if priority == "Medium" else "🔵"
+
+            blocks.append({"type": "divider"})
             blocks.append({
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"*Ticket T{ticket_id}*\n" +
-                            f"*Campaign:* {campaign}\n" +
-                            f"*Issue:* {issue_type}\n" +
-                            f"*Priority:* {priority}\n" +
-                            f"*Status:* {status}\n" +
-                            f"*Assigned To:* {assigned_to if assigned_to != 'Unassigned' else 'Unassigned'}\n" +
-                            f"*Created:* {created_at.strftime('%m/%d/%Y %H:%M')}\n"
+                    "text": f"🎟️ *T{ticket_id} - {status}* {status_emoji}\n" +
+                            f"📂 Campaign: {campaign}\n" +
+                            f"📌 Issue: {issue_type}\n" +
+                            f"⚡ Priority: {priority} {priority_emoji}\n" +
+                            f"👤 Assigned To: {f'@{assigned_to}' if assigned_to != 'Unassigned' else '❌ Unassigned'}\n" +
+                            f"📅 Created: {created_at.strftime('%m/%d/%Y')}"
+                },
+                "accessory": {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "👀 View Progress", "emoji": True},
+                    "value": str(ticket_id),
+                    "action_id": f"view_ticket_progress_{ticket_id}"
                 }
             })
-            blocks.append({"type": "divider"})
+
+        # Add status explanation footer
+        blocks.append({"type": "divider"})
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "*🔹 Updated Features:*\n" +
+                        "✅ Agents can track ticket progress by checking the status\n" +
+                        "✅ Statuses are color-coded:\n\n" +
+                        "🟢 Open (Not yet assigned)\n\n" +
+                        "🔵 In Progress (A system user is working on it)\n\n" +
+                        "🟡 Resolved (Issue fixed, but not yet closed)\n\n" +
+                        "🔴 Closed (No further action needed)\n" +
+                        "✅ Clicking \"View Progress\" opens a detailed modal with updates"
+            }
+        })
 
         return jsonify({
             "response_type": "ephemeral",
@@ -685,6 +710,86 @@ def handle_interactivity():
             elif action_id.startswith("reopen_"):
                 update_ticket_status(ticket_id, "Open", message_ts=message_ts, action_user_id=user_id)
                 return "", 200
+            elif action_id.startswith("view_ticket_progress_"):
+                # Get ticket details and comments
+                conn = db_pool.getconn()
+                try:
+                    cur = conn.cursor()
+                    cur.execute("SELECT * FROM tickets WHERE ticket_id = %s", (ticket_id,))
+                    ticket = cur.fetchone()
+                    if not ticket:
+                        return jsonify({"text": "Ticket not found"}), 200
+
+                    # Get comments/updates for this ticket
+                    cur.execute("SELECT user_id, comment_text, created_at FROM comments WHERE ticket_id = %s ORDER BY created_at", (ticket_id,))
+                    comments = cur.fetchall()
+
+                    # Get ticket history
+                    ticket_id, created_by, campaign, issue_type, priority, status, assigned_to, details, salesforce_link, file_url, created_at, updated_at = ticket
+
+                    # Define status emoji
+                    status_emoji = "🟢" if status == "Open" else "🔵" if status == "In Progress" else "🟡" if status == "Resolved" else "🔴"
+                    priority_emoji = "🔴" if priority == "High" else "🟡" if priority == "Medium" else "🔵"
+
+                    # Build updates list
+                    updates = [f"1️⃣ *{created_at.strftime('%m/%d/%Y %I:%M %p')}:* Ticket submitted by <@{created_by}>"]
+
+                    # Add comments as updates
+                    for i, (comment_user, comment_text, comment_date) in enumerate(comments, 2):
+                        updates.append(f"{i}️⃣ *{comment_date.strftime('%m/%d/%Y %I:%M %p')}:* {comment_text} - <@{comment_user}>")
+
+                    # If no comments, add a note about status
+                    if not comments and status != "Open":
+                        updates.append(f"2️⃣ *{updated_at.strftime('%m/%d/%Y %I:%M %p')}:* Status changed to {status}")
+
+                    # Build the modal
+                    blocks = [
+                        {"type": "header", "text": {"type": "plain_text", "text": "🎫 Ticket Progress", "emoji": True}},
+                        {"type": "divider"},
+                        {
+                            "type": "section",
+                            "text": {
+                                "type": "mrkdwn",
+                                "text": f"✅ *Ticket ID:* T{ticket_id}\n" +
+                                        f"📂 *Campaign:* {campaign}\n" +
+                                        f"📌 *Issue:* {issue_type}\n" +
+                                        f"⚡ *Priority:* {priority} {priority_emoji}\n" +
+                                        f"👤 *Assigned To:* {f'@{assigned_to}' if assigned_to != 'Unassigned' else '❌ Unassigned'}\n" +
+                                        f"🔄 *Status:* {status} {status_emoji}\n" +
+                                        f"📅 *Created On:* {created_at.strftime('%m/%d/%Y')}\n"
+                            }
+                        },
+                        {"type": "divider"},
+                        {
+                            "type": "section",
+                            "text": {
+                                "type": "mrkdwn",
+                                "text": f"🔧 *Recent Updates:*\n{chr(10).join(updates)}"
+                            }
+                        },
+                        {
+                            "type": "context",
+                            "elements": [
+                                {
+                                    "type": "mrkdwn",
+                                    "text": "🔔 *You will receive updates when the status changes.*"
+                                }
+                            ]
+                        }
+                    ]
+
+                    # Show the modal
+                    modal = {
+                        "type": "modal",
+                        "title": {"type": "plain_text", "text": "Ticket Progress"},
+                        "close": {"type": "plain_text", "text": "Close"},
+                        "blocks": blocks
+                    }
+                    client.views_open(trigger_id=trigger_id, view=modal)
+
+                finally:
+                    db_pool.putconn(conn)
+                return "", 200
 
         return jsonify({"status": "success"})
     except Exception as e:
@@ -740,20 +845,20 @@ def handle_slack_events():
                 # Post the ticket details message to the channel
                 message_blocks = [
                     {"type": "header", "text": {"type": "plain_text", "text": "🎫 Ticket Details", "emoji": True}},
-                    {"type": "section", "text": {"type": "mrkdwn", "text": f":white_check_mark: *Ticket ID:* T{ticket_id} {':fire:' if priority == 'High' else ':hourglass_flowing_sand:' if priority == 'Medium' else ''}\n\n"}},
+                    {"type": "section", "text": {"type": "mrkdwn", "text": f":ticket: *New Ticket Alert* | T{ticket_id} | {priority} Priority {':fire:' if priority == 'High' else ':hourglass_flowing_sand:' if priority == 'Medium' else ''}\n\n"}},
                     {
                         "type": "section",
                         "text": {
                             "type": "mrkdwn",
-                            "text": f":file_folder: *Campaign:* {campaign}\n\n"
-                                    f":pushpin: *Issue:* {issue_type}\n\n"
-                                    f":zap: *Priority:* {priority} {' :red_circle:' if priority == 'High' else ' :large_yellow_circle:' if priority == 'Medium' else ' :large_blue_circle:'}\n\n"
-                                    f":bust_in_silhouette: *Assigned To:* :x: Unassigned\n\n"
-                                    f":gear: *Status:* `Open` :green_circle:\n\n"
+                            "text": f"📂 *Campaign:* {campaign}\n\n"
+                                    f"📌 *Issue:* {issue_type}\n\n"
+                                    f"⚡ *Priority:* {priority} {' 🔴' if priority == 'High' else ' 🟡' if priority == 'Medium' else ' 🔵'}\n\n"
+                                    f"👤 *Submitted By:* <@{user_id}>\n\n"
+                                    f"🔄 *Status:* `Open` 🟢\n\n"
                         }
                     },
                     {"type": "divider"},
-                    {"type": "section", "text": {"type": "mrkdwn", "text": f":writing_hand: *Details:* {details}\n\n"}},
+                    {"type": "section", "text": {"type": "mrkdwn", "text": f"✏️ *Details:* {details}\n\n"}},
                     {"type": "section", "text": {"type": "mrkdwn", "text": f":link: *Salesforce Link:* {salesforce_link}\n\n"}},
                     {"type": "section", "text": {"type": "mrkdwn", "text": f":camera: *Screenshot/Image:* {f'<{file_url}|View Image>' if file_url != 'No file uploaded' else 'No image uploaded'}\n\n"}},
                     {"type": "section", "text": {"type": "mrkdwn", "text": f":calendar: *Created:* {now.strftime('%m/%d/%Y %I:%M %p')} ({now.strftime('%A')})\n\n"}},
@@ -794,10 +899,13 @@ def handle_slack_events():
                             "type": "section",
                             "text": {
                                 "type": "mrkdwn",
-                                "text": f"*Ticket ID:* T{ticket_id}\n"
-                                        f"*Campaign:* {campaign}\n"
-                                        f"*Issue Type:* {issue_type}\n"
-                                        f"*Priority:* {priority} {' 🔴' if priority == 'High' else ' 🟡' if priority == 'Medium' else ' 🔵'}"
+                                "text": f"✅ *Ticket ID:* T{ticket_id}\n"
+                                        f"📂 *Campaign:* {campaign}\n"
+                                        f"📌 *Issue Type:* {issue_type}\n"
+                                        f"⚡ *Priority:* {priority} {' 🔴' if priority == 'High' else ' 🟡' if priority == 'Medium' else ' 🔵'}\n"
+                                        f"👤 *Assigned To:* ❌ Unassigned\n"
+                                        f"🔄 *Status:* Open 🟢\n"
+                                        f"📅 *Created On:* {now.strftime('%m/%d/%Y')}"
                             }
                         },
                         {
@@ -807,8 +915,9 @@ def handle_slack_events():
                             "type": "section",
                             "text": {
                                 "type": "mrkdwn",
-                                "text": f"Your ticket has been posted in <#{SLACK_CHANNEL_ID}>.\n\n"
-                                        f"You can check the status of your ticket anytime by running:\n"
+                                "text": f"🔔 Your ticket has been posted in <#{SLACK_CHANNEL_ID}>.\n"
+                                        f"📩 You will receive updates as it progresses.\n"
+                                        f"💡 To check ticket status anytime, run:\n"
                                         f"`/agent-tickets`"
                             }
                         },
@@ -817,7 +926,7 @@ def handle_slack_events():
                             "elements": [
                                 {
                                     "type": "mrkdwn",
-                                    "text": "✅ The Systems Team has been notified and will review your ticket shortly."
+                                    "text": "🚀 *Thank you! The Systems Team will review your issue shortly.*"
                                 }
                             ]
                         }
