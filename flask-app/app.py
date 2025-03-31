@@ -308,7 +308,7 @@ def build_new_ticket_modal():
             {
                 "type": "input",
                 "block_id": "file_upload_block",
-                "label": {"type": "plain_text", "text": "📎 File Upload (Optional)"},
+                "label": {"type": "plain_text", "text": "📷 Screenshot/Image Upload (Optional)"},
                 "element": {
                     "type": "file_input",
                     "action_id": "file_upload_input"
@@ -755,7 +755,7 @@ def handle_slack_events():
                     {"type": "divider"},
                     {"type": "section", "text": {"type": "mrkdwn", "text": f":writing_hand: *Details:* {details}\n\n"}},
                     {"type": "section", "text": {"type": "mrkdwn", "text": f":link: *Salesforce Link:* {salesforce_link}\n\n"}},
-                    {"type": "section", "text": {"type": "mrkdwn", "text": f":file_folder: *File Attachment:* {f'<{file_url}|View File>' if file_url != 'No file uploaded' else 'No file uploaded'}\n\n"}},
+                    {"type": "section", "text": {"type": "mrkdwn", "text": f":camera: *Screenshot/Image:* {f'<{file_url}|View Image>' if file_url != 'No file uploaded' else 'No image uploaded'}\n\n"}},
                     {"type": "section", "text": {"type": "mrkdwn", "text": f":calendar: *Created Date:* {now.strftime('%m/%d/%Y')}\n\n"}},
                     {"type": "divider"},
                     {
