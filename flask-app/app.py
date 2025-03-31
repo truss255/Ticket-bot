@@ -16,6 +16,7 @@ import requests
 from dotenv import load_dotenv
 import time
 from check_db_route import add_db_check_route
+from ticket_templates import get_ticket_submission_blocks, get_agent_confirmation_blocks, get_ticket_updated_blocks
 
 # Load environment variables from .env file
 load_dotenv()
@@ -50,7 +51,24 @@ if not DATABASE_URL:
 
 # Initialize Slack client
 client = WebClient(token=SLACK_BOT_TOKEN)
-logger.info("Slack client initialized.")
+
+# Check Slack API version
+try:
+    api_test = client.api_test()
+    logger.info(f"Slack API Test: {api_test}")
+
+    # Check auth
+    auth_test = client.auth_test()
+    logger.info(f"Slack Auth Test: {auth_test}")
+    logger.info(f"Connected as: {auth_test.get('user')} to workspace: {auth_test.get('team')}")
+
+    # Log available methods
+    available_methods = [method for method in dir(client) if not method.startswith('_')]
+    logger.info(f"Available Slack client methods: {', '.join(available_methods[:20])}...")
+
+    logger.info("Slack client initialized successfully.")
+except Exception as e:
+    logger.error(f"Error initializing Slack client: {e}")
 
 # Set Slack channel ID
 SLACK_CHANNEL_ID = os.getenv("SLACK_CHANNEL_ID", "C08JTKR1RPT")
@@ -1613,6 +1631,7 @@ def handle_slack_events():
         if data.get("type") == "view_submission":
             callback_id = data.get("view", {}).get("callback_id")
             logger.info(f"Processing view submission with callback_id: {callback_id}")
+            logger.info(f"Full view submission payload: {json.dumps(data)[:500]}...")
 
             if callback_id == "new_ticket":
                 try:
@@ -1686,8 +1705,21 @@ def handle_slack_events():
                     finally:
                         db_pool.putconn(conn)
 
-                    # Post the ticket details message to the channel
-                    message_blocks = [
+                    # Use the template to create the ticket submission message blocks
+                    logger.info(f"Creating ticket submission blocks using template for ticket ID: {ticket_id}")
+                    message_blocks = get_ticket_submission_blocks(
+                        ticket_id=ticket_id,
+                        campaign=campaign,
+                        issue_type=issue_type,
+                        priority=priority,
+                        user_id=user_id,
+                        details=details,
+                        salesforce_link=salesforce_link,
+                        file_url=file_url
+                    )
+
+                    # For backward compatibility, keep this line
+                    # message_blocks = [
                     {"type": "header", "text": {"type": "plain_text", "text": "🎫 Ticket Details", "emoji": True}},
                     {"type": "section", "text": {"type": "mrkdwn", "text": f":ticket: *New Ticket Alert* | T{ticket_id:03d} | {priority} Priority {':fire:' if priority == 'High' else ':hourglass_flowing_sand:' if priority == 'Medium' else ''}\n\n"}},
                     {
@@ -1714,23 +1746,57 @@ def handle_slack_events():
                         ]
                     }
                 ]
-                    message_blocks[-1]["elements"] = [elem for elem in message_blocks[-1]["elements"] if elem]
+                    # No need to filter elements anymore as the template handles this
+                    # message_blocks[-1]["elements"] = [elem for elem in message_blocks[-1]["elements"] if elem]
                     # Post ticket to main channel
                     logger.info(f"Posting ticket to channel: {SLACK_CHANNEL_ID}")
                     logger.info(f"Message blocks: {json.dumps(message_blocks[:2])}...")
+                    # Try different approaches for posting to the channel
+                    logger.info(f"Attempting to post to channel {SLACK_CHANNEL_ID} using different methods")
+
+                    # Method 1: Use chat_postMessage with blocks and text
                     try:
-                        # Try posting with blocks first
-                        response = client.chat_postMessage(channel=SLACK_CHANNEL_ID, blocks=message_blocks)
-                        logger.info(f"Message posted successfully: {response.get('ts')}")
-                    except Exception as post_err:
-                        logger.error(f"Error posting message with blocks: {post_err}")
-                        # Try a simpler message as fallback
+                        text_fallback = f"New Ticket T{ticket_id:03d} - {issue_type} - {priority} Priority - Submitted by <@{user_id}>"
+                        response = client.chat_postMessage(
+                            channel=SLACK_CHANNEL_ID,
+                            blocks=message_blocks,
+                            text=text_fallback  # This is shown if blocks can't be displayed
+                        )
+                        logger.info(f"Method 1 successful: {response.get('ts')}")
+                    except Exception as err1:
+                        logger.error(f"Method 1 failed: {err1}")
+
+                        # Method 2: Use chat_postMessage with just text
                         try:
-                            fallback_text = f"New Ticket T{ticket_id:03d} - {issue_type} - {priority} Priority - Submitted by <@{user_id}>"
-                            response = client.chat_postMessage(channel=SLACK_CHANNEL_ID, text=fallback_text)
-                            logger.info(f"Fallback message posted successfully: {response.get('ts')}")
-                        except Exception as fallback_err:
-                            logger.error(f"Error posting fallback message: {fallback_err}")
+                            text_only = f"*New Ticket Alert* | T{ticket_id:03d} | {priority} Priority\n" + \
+                                       f"*Campaign:* {campaign}\n" + \
+                                       f"*Issue:* {issue_type}\n" + \
+                                       f"*Created by:* <@{user_id}>\n" + \
+                                       f"*Status:* Open\n" + \
+                                       f"*Details:* {details[:100]}..."
+
+                            response = client.chat_postMessage(
+                                channel=SLACK_CHANNEL_ID,
+                                text=text_only,
+                                mrkdwn=True
+                            )
+                            logger.info(f"Method 2 successful: {response.get('ts')}")
+                        except Exception as err2:
+                            logger.error(f"Method 2 failed: {err2}")
+
+                            # Method 3: Try a different channel
+                            try:
+                                # Try posting to the general channel as a last resort
+                                general_channel = "#general"
+                                simple_text = f"New ticket submitted: T{ticket_id:03d} - {issue_type}"
+
+                                response = client.chat_postMessage(
+                                    channel=general_channel,
+                                    text=simple_text
+                                )
+                                logger.info(f"Method 3 successful (posted to {general_channel}): {response.get('ts')}")
+                            except Exception as err3:
+                                logger.error(f"All posting methods failed. Last error: {err3}")
 
                     # Send notification to admin channel
                     admin_notification = f":ticket: *New Ticket Alert* | T{ticket_id} | {priority} Priority\n" + \
@@ -1805,33 +1871,67 @@ def handle_slack_events():
                                 "alt_text": "Uploaded image"
                             }
                         })
-                    logger.info(f"Opening confirmation modal with trigger_id: {data.get('trigger_id')}")
+                    # Send a confirmation message to the agent using the template
+                    logger.info(f"Sending confirmation message directly to user {user_id}")
                     try:
-                        modal_response = client.views_open(trigger_id=data["trigger_id"], view=confirmation_view)
-                        logger.info(f"Confirmation modal opened successfully: {modal_response.get('view', {}).get('id')}")
-                    except Exception as modal_err:
-                        logger.error(f"Error opening confirmation modal: {modal_err}")
+                        # Get confirmation blocks from template
+                        confirmation_blocks = get_agent_confirmation_blocks(
+                            ticket_id=ticket_id,
+                            campaign=campaign,
+                            issue_type=issue_type,
+                            priority=priority
+                        )
+
+                        # Send a direct message to the user
+                        dm_response = client.chat_postMessage(
+                            channel=user_id,  # Sending DM to user
+                            text=f":white_check_mark: Your ticket T{ticket_id:03d} has been submitted successfully!",
+                            blocks=confirmation_blocks
+                        )
+                        logger.info(f"Confirmation DM sent successfully: {dm_response.get('ts')}")
+                    except Exception as dm_err:
+                        logger.error(f"Error sending confirmation DM: {dm_err}")
+
+                        # Try sending an ephemeral message in the channel as fallback
+                        try:
+                            ephemeral_response = client.chat_postEphemeral(
+                                channel=SLACK_CHANNEL_ID,
+                                user=user_id,
+                                text=f":white_check_mark: Your ticket T{ticket_id:03d} has been submitted successfully!"
+                            )
+                            logger.info(f"Ephemeral confirmation sent: {ephemeral_response.get('message_ts')}")
+                        except Exception as eph_err:
+                            logger.error(f"Error sending ephemeral confirmation: {eph_err}")
 
                     # For view_submission, Slack expects a specific response format
                     # https://api.slack.com/reference/interaction-payloads/views#view_submission
                     logger.info("Returning response for view_submission")
 
-                    # Option 1: Clear the view
+                    # Try different response formats
+
+                    # Option 1: Just acknowledge with empty 200 response
+                    # This should close the modal and show no errors
+                    logger.info("Using empty 200 response")
+                    return "", 200
+
+                    # Option 2: Clear the view
+                    # logger.info("Using response_action: clear")
                     # return jsonify({"response_action": "clear"})
 
-                    # Option 2: Update the view with a success message
-                    success_view = {
-                        "type": "modal",
-                        "title": {"type": "plain_text", "text": "Success"},
-                        "close": {"type": "plain_text", "text": "Close"},
-                        "blocks": [
-                            {
-                                "type": "section",
-                                "text": {"type": "mrkdwn", "text": f":white_check_mark: Ticket T{ticket_id:03d} has been submitted successfully!"}
-                            }
-                        ]
-                    }
-                    return jsonify({"response_action": "update", "view": success_view})
+                    # Option 3: Update the view with a success message
+                    # success_view = {
+                    #     "type": "modal",
+                    #     "title": {"type": "plain_text", "text": "Success"},
+                    #     "close": {"type": "plain_text", "text": "Close"},
+                    #     "blocks": [
+                    #         {
+                    #             "type": "section",
+                    #             "text": {"type": "mrkdwn", "text": f":white_check_mark: Ticket T{ticket_id:03d} has been submitted successfully!"}
+                    #         }
+                    #     ]
+                    # }
+                    # logger.info("Using response_action: update")
+                    # return jsonify({"response_action": "update", "view": success_view})
                 except Exception as e:
                     logger.error(f"Error in new_ticket submission: {e}")
                     return jsonify({"text": "❌ Ticket submission failed"}), 500
