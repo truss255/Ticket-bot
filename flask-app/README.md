@@ -56,6 +56,8 @@ The app includes an `init_db()` function that creates the necessary database tab
 
 - **`/new-ticket`**: Opens a modal for submitting a new ticket. Users can select a campaign, issue type, priority, and provide details.
 - **`/agent-tickets`**: Displays a modal showing the user's submitted tickets, including their status and details.
+- **`/system-tickets`**: Displays all tickets in the system (only available to system users).
+- **`/ticket-summary`**: Shows a summary of ticket statistics (only available to system users).
 
 ### Interacting with Ticket Messages
 
@@ -92,18 +94,31 @@ To deploy this app on Railway:
 
 3. **Set Environment Variables**:
    - In your Railway project settings, add the following variables:
-     - `SLACK_BOT_TOKEN`
+     - `SLACK_BOT_TOKEN` - Your Slack bot token (starts with `xoxb-`)
      - `DATABASE_URL` (from the provisioned database)
-     - `ADMIN_CHANNEL`
-     - `TIMEZONE`
-     - `SYSTEM_USERS`
+     - `ADMIN_CHANNEL` - The Slack channel for admin notifications (e.g., `#admin-notifications`)
+     - `TIMEZONE` - Your preferred timezone (e.g., `America/New_York`)
+     - `SYSTEM_USERS` - A comma-separated list of Slack user IDs who have admin privileges
 
 4. **Deploy the App**:
    - Railway will automatically detect the Flask app and deploy it.
-   - Ensure your `requirements.txt` is up-to-date with all dependencies (e.g., `flask`, `slack_sdk`, `psycopg2-binary`, `apscheduler`, `pytz`).
+   - Ensure your `requirements.txt` is up-to-date with all dependencies (e.g., `flask`, `slack_sdk`, `psycopg2-binary`, `apscheduler`, `pytz`, `python-dotenv`).
 
-5. **Verify Deployment**:
+5. **Configure Slack App**:
+   - Create a Slack App in the [Slack API Console](https://api.slack.com/apps)
+   - Under "Slash Commands", add the following commands:
+     - `/new-ticket` - URL: `https://your-app-url.com/api/tickets/new-ticket`
+     - `/agent-tickets` - URL: `https://your-app-url.com/api/tickets/agent-tickets`
+     - `/system-tickets` - URL: `https://your-app-url.com/api/tickets/system-tickets`
+     - `/ticket-summary` - URL: `https://your-app-url.com/api/tickets/ticket-summary`
+   - Under "Interactivity & Shortcuts", enable Interactivity and set the Request URL to: `https://your-app-url.com/api/tickets/slack/events`
+   - Under "Event Subscriptions", enable Events and set the Request URL to: `https://your-app-url.com/api/tickets/slack/events`
+   - Under "OAuth & Permissions", add the necessary scopes: `channels:history`, `channels:read`, `chat:write`, `commands`, `files:read`, `groups:write`, `im:history`, `im:write`, `pins:write`, `users:read`, `groups:read`
+   - Install the app to your workspace
+
+6. **Verify Deployment**:
    - Check the Railway logs to ensure the app starts correctly and the database schema is initialized.
+   - Test the slash commands in Slack to make sure they work correctly.
 
 ---
 

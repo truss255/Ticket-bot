@@ -313,25 +313,289 @@ def build_new_ticket_modal():
     }
 
 # Routes
+@app.route('/', methods=['GET'])
+def index():
+    return jsonify({
+        "status": "ok",
+        "message": "Ticket Bot is running",
+        "endpoints": [
+            "/api/tickets/new-ticket",
+            "/api/tickets/agent-tickets",
+            "/api/tickets/system-tickets",
+            "/api/tickets/ticket-summary",
+            "/api/tickets/slack/interactivity",
+            "/api/tickets/slack/events"
+        ]
+    })
+
+@app.route('/api/tickets/agent-tickets', methods=['POST'])
+def agent_tickets():
+    logger.info("Received /api/tickets/agent-tickets request")
+    try:
+        # Log the request data for debugging
+        logger.info(f"Request form data: {request.form}")
+
+        user_id = request.form.get('user_id')
+        if not user_id:
+            return jsonify({"text": "Error: Could not identify user."}), 200
+
+        # Fetch tickets submitted by this user
+        conn = db_pool.getconn()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM tickets WHERE created_by = %s ORDER BY created_at DESC", (user_id,))
+            tickets = cur.fetchall()
+        finally:
+            db_pool.putconn(conn)
+
+        if not tickets:
+            return jsonify({"text": "You haven't submitted any tickets yet."}), 200
+
+        # Build a modal to display the tickets
+        blocks = [
+            {
+                "type": "header",
+                "text": {"type": "plain_text", "text": "Your Tickets"}
+            }
+        ]
+
+        for ticket in tickets:
+            ticket_id, created_by, campaign, issue_type, priority, status, assigned_to, details, salesforce_link, file_url, created_at, updated_at = ticket
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*Ticket T{ticket_id}*\n" +
+                            f"*Campaign:* {campaign}\n" +
+                            f"*Issue:* {issue_type}\n" +
+                            f"*Priority:* {priority}\n" +
+                            f"*Status:* {status}\n" +
+                            f"*Assigned To:* {assigned_to if assigned_to != 'Unassigned' else 'Unassigned'}\n" +
+                            f"*Created:* {created_at.strftime('%m/%d/%Y %H:%M')}\n"
+                }
+            })
+            blocks.append({"type": "divider"})
+
+        return jsonify({
+            "response_type": "ephemeral",
+            "blocks": blocks
+        }), 200
+    except Exception as e:
+        logger.error(f"Error in /api/tickets/agent-tickets: {e}")
+        return jsonify({"text": "❌ An error occurred. Please try again later."}), 200
+
+@app.route('/api/tickets/system-tickets', methods=['POST'])
+def system_tickets():
+    logger.info("Received /api/tickets/system-tickets request")
+    try:
+        # Log the request data for debugging
+        logger.info(f"Request form data: {request.form}")
+
+        user_id = request.form.get('user_id')
+        if not user_id:
+            return jsonify({"text": "Error: Could not identify user."}), 200
+
+        # Check if user is a system user
+        if not is_system_user(user_id):
+            return jsonify({"text": "❌ You do not have permission to view system tickets."}), 200
+
+        # Fetch all tickets
+        conn = db_pool.getconn()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM tickets ORDER BY created_at DESC")
+            tickets = cur.fetchall()
+        finally:
+            db_pool.putconn(conn)
+
+        if not tickets:
+            return jsonify({"text": "There are no tickets in the system."}), 200
+
+        # Build a modal to display the tickets
+        blocks = [
+            {
+                "type": "header",
+                "text": {"type": "plain_text", "text": "All System Tickets"}
+            }
+        ]
+
+        for ticket in tickets:
+            ticket_id, created_by, campaign, issue_type, priority, status, assigned_to, details, salesforce_link, file_url, created_at, updated_at = ticket
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*Ticket T{ticket_id}*\n" +
+                            f"*Created By:* <@{created_by}>\n" +
+                            f"*Campaign:* {campaign}\n" +
+                            f"*Issue:* {issue_type}\n" +
+                            f"*Priority:* {priority}\n" +
+                            f"*Status:* {status}\n" +
+                            f"*Assigned To:* {assigned_to if assigned_to != 'Unassigned' else 'Unassigned'}\n" +
+                            f"*Created:* {created_at.strftime('%m/%d/%Y %H:%M')}\n"
+                }
+            })
+            blocks.append({"type": "divider"})
+
+        return jsonify({
+            "response_type": "ephemeral",
+            "blocks": blocks
+        }), 200
+    except Exception as e:
+        logger.error(f"Error in /api/tickets/system-tickets: {e}")
+        return jsonify({"text": "❌ An error occurred. Please try again later."}), 200
+
+@app.route('/api/tickets/ticket-summary', methods=['POST'])
+def ticket_summary():
+    logger.info("Received /api/tickets/ticket-summary request")
+    try:
+        # Log the request data for debugging
+        logger.info(f"Request form data: {request.form}")
+
+        user_id = request.form.get('user_id')
+        if not user_id:
+            return jsonify({"text": "Error: Could not identify user."}), 200
+
+        # Check if user is a system user
+        if not is_system_user(user_id):
+            return jsonify({"text": "❌ You do not have permission to view ticket summary."}), 200
+
+        # Fetch ticket statistics
+        conn = db_pool.getconn()
+        try:
+            cur = conn.cursor()
+            # Total tickets
+            cur.execute("SELECT COUNT(*) FROM tickets")
+            total_tickets = cur.fetchone()[0]
+
+            # Open tickets
+            cur.execute("SELECT COUNT(*) FROM tickets WHERE status = 'Open'")
+            open_tickets = cur.fetchone()[0]
+
+            # In Progress tickets
+            cur.execute("SELECT COUNT(*) FROM tickets WHERE status = 'In Progress'")
+            in_progress_tickets = cur.fetchone()[0]
+
+            # Resolved tickets
+            cur.execute("SELECT COUNT(*) FROM tickets WHERE status = 'Resolved'")
+            resolved_tickets = cur.fetchone()[0]
+
+            # Closed tickets
+            cur.execute("SELECT COUNT(*) FROM tickets WHERE status = 'Closed'")
+            closed_tickets = cur.fetchone()[0]
+
+            # High priority tickets
+            cur.execute("SELECT COUNT(*) FROM tickets WHERE priority = 'High'")
+            high_priority = cur.fetchone()[0]
+
+            # Unassigned tickets
+            cur.execute("SELECT COUNT(*) FROM tickets WHERE assigned_to = 'Unassigned'")
+            unassigned = cur.fetchone()[0]
+        finally:
+            db_pool.putconn(conn)
+
+        # Build a response with the statistics
+        blocks = [
+            {
+                "type": "header",
+                "text": {"type": "plain_text", "text": "Ticket Summary"}
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*Total Tickets:* {total_tickets}\n" +
+                            f"*Open:* {open_tickets}\n" +
+                            f"*In Progress:* {in_progress_tickets}\n" +
+                            f"*Resolved:* {resolved_tickets}\n" +
+                            f"*Closed:* {closed_tickets}\n" +
+                            f"*High Priority:* {high_priority}\n" +
+                            f"*Unassigned:* {unassigned}\n"
+                }
+            }
+        ]
+
+        return jsonify({
+            "response_type": "ephemeral",
+            "blocks": blocks
+        }), 200
+    except Exception as e:
+        logger.error(f"Error in /api/tickets/ticket-summary: {e}")
+        return jsonify({"text": "❌ An error occurred. Please try again later."}), 200
+
+@app.route('/api/tickets/new-ticket', methods=['POST'])
+def slack_new_ticket_command():
+    logger.info("Received /api/tickets/new-ticket request")
+    try:
+        # Log the request data for debugging
+        logger.info(f"Request form data: {request.form}")
+        logger.info(f"Request headers: {request.headers}")
+
+        # Verify the command is from Slack
+        if request.form.get('command') != '/new-ticket':
+            logger.warning(f"Unexpected command: {request.form.get('command')}")
+
+        trigger_id = request.form.get('trigger_id')
+        logger.info(f"Trigger ID: {trigger_id}")
+
+        if not trigger_id:
+            logger.error("No trigger_id found in the request")
+            return jsonify({"text": "Error: Could not process your request. Please try again."}), 200
+
+        # Log the Slack token (first few characters for security)
+        token_preview = SLACK_BOT_TOKEN[:10] + "..." if SLACK_BOT_TOKEN else "None"
+        logger.info(f"Using Slack token: {token_preview}")
+
+        modal = build_new_ticket_modal()
+        logger.info("Built new ticket modal")
+
+        response = client.views_open(trigger_id=trigger_id, view=modal)
+        logger.info(f"Slack API response: {response}")
+
+        return "", 200
+    except Exception as e:
+        logger.error(f"Error in /slack/commands/new-ticket: {e}")
+        return jsonify({"text": "❌ An error occurred. Please try again later."}), 200
+
 @app.route('/new-ticket', methods=['POST'])
 def new_ticket():
     logger.info("Received /new-ticket request")
     try:
+        # Log the request data for debugging
+        logger.info(f"Request form data: {request.form}")
+        logger.info(f"Request headers: {request.headers}")
+
         trigger_id = request.form.get('trigger_id')
+        logger.info(f"Trigger ID: {trigger_id}")
+
+        if not trigger_id:
+            logger.error("No trigger_id found in the request")
+            return jsonify({"error": "No trigger_id found"}), 400
+
+        # Log the Slack token (first few characters for security)
+        token_preview = SLACK_BOT_TOKEN[:10] + "..." if SLACK_BOT_TOKEN else "None"
+        logger.info(f"Using Slack token: {token_preview}")
+
         modal = build_new_ticket_modal()
+        logger.info("Built new ticket modal")
+
         response = requests.post(
             "https://slack.com/api/views.open",
             headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}"},
             json={"trigger_id": trigger_id, "view": modal}
         )
+
+        # Log the response from Slack
+        logger.info(f"Slack API response: {response.status_code} - {response.text}")
+
         return jsonify(response.json())
     except Exception as e:
         logger.error(f"Error in /new-ticket: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route('/slack/interactivity', methods=['POST'])
+@app.route('/api/tickets/slack/interactivity', methods=['POST'])
 def handle_interactivity():
-    logger.info("Received /slack/interactivity request")
+    logger.info("Received /api/tickets/slack/interactivity request")
     try:
         payload = request.form.get('payload')
         data = json.loads(payload)
@@ -421,7 +685,7 @@ def handle_interactivity():
         logger.error(f"Error in /slack/interactivity: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route('/slack/events', methods=['POST'])
+@app.route('/api/tickets/slack/events', methods=['POST'])
 def handle_slack_events():
     logger.info("Received Slack event")
     try:
