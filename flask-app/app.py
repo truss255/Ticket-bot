@@ -16,7 +16,7 @@ import requests
 from dotenv import load_dotenv
 import time
 from check_db_route import add_db_check_route
-from .ticket_templates import get_ticket_submission_blocks, get_agent_confirmation_blocks, get_ticket_updated_blocks
+from ticket_templates import get_ticket_submission_blocks, get_agent_confirmation_blocks, get_ticket_updated_blocks
 
 # Load environment variables from .env file
 load_dotenv()
