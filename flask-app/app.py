@@ -847,7 +847,6 @@ def handle_interactivity():
                             {"type": "mrkdwn", "text": ":bell: *You will receive updates when the status changes.*"}
                         ]
                     })
-                    ]
 
                     # Show the modal
                     modal = {
