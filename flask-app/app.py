@@ -331,11 +331,75 @@ def index():
             "/api/tickets/system-tickets",
             "/api/tickets/ticket-summary",
             "/api/tickets/slack/interactivity",
-            "/api/tickets/slack/events"
+            "/api/tickets/slack/events",
+            "/api/tickets/slack/url-verification",
+            "/api/tickets/slack/event-subscriptions",
+            "/health"
         ],
         "version": "1.1.0",
         "last_updated": "2025-03-31"
     })
+
+@app.route('/api/tickets/slack/event-subscriptions', methods=['POST'])
+def slack_event_subscriptions():
+    """Handle Slack event subscriptions"""
+    logger.info("Received Slack event subscription")
+    try:
+        # Verify the request is from Slack
+        if not request.is_json:
+            logger.warning("Request is not JSON")
+            return jsonify({"error": "Expected JSON"}), 400
+
+        data = request.json
+
+        # Handle URL verification
+        if data and data.get('type') == 'url_verification':
+            challenge = data.get('challenge')
+            logger.info(f"Returning challenge: {challenge}")
+            return jsonify({"challenge": challenge})
+
+        # Handle events
+        if data and 'event' in data:
+            event = data.get('event', {})
+            event_type = event.get('type')
+            logger.info(f"Received event type: {event_type}")
+
+            # Handle different event types
+            if event_type == 'message':
+                channel = event.get('channel')
+                user = event.get('user')
+                text = event.get('text')
+                logger.info(f"Message from {user} in {channel}: {text}")
+
+            # Always acknowledge receipt
+            return jsonify({"status": "ok"})
+
+        # Default response
+        logger.warning(f"Unhandled event type: {data.get('type')}")
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        logger.error(f"Error in event subscription: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/tickets/slack/url-verification', methods=['POST'])
+def slack_url_verification():
+    """Handle Slack URL verification challenges"""
+    logger.info("Received Slack URL verification request")
+    try:
+        # Get the challenge parameter from the request
+        if request.is_json:
+            data = request.json
+            if data and data.get('type') == 'url_verification':
+                challenge = data.get('challenge')
+                logger.info(f"Returning challenge: {challenge}")
+                return jsonify({"challenge": challenge})
+
+        # If we get here, it wasn't a valid verification request
+        logger.warning("Invalid URL verification request")
+        return jsonify({"error": "Invalid verification request"}), 400
+    except Exception as e:
+        logger.error(f"Error in URL verification: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -1412,12 +1476,18 @@ def handle_interactivity():
 def handle_slack_events():
     logger.info("Received Slack event")
     try:
-        # Check if this is a URL verification challenge
-        if request.json and request.json.get('type') == 'url_verification':
-            return jsonify({"challenge": request.json.get('challenge')})
+        # Log request details for debugging
+        logger.info(f"Content-Type: {request.content_type}")
+        logger.info(f"Headers: {dict(request.headers)}")
 
-        # For event subscriptions, handle differently
-        if request.json and 'event' in request.json:
+        # Check if this is a URL verification challenge (application/json)
+        if request.is_json and request.json and request.json.get('type') == 'url_verification':
+            challenge = request.json.get('challenge')
+            logger.info(f"Received URL verification challenge: {challenge}")
+            return jsonify({"challenge": challenge})
+
+        # For event subscriptions (application/json)
+        if request.is_json and request.json and 'event' in request.json:
             event = request.json.get('event', {})
             event_type = event.get('type')
             logger.info(f"Received Slack event type: {event_type}")
@@ -1430,13 +1500,24 @@ def handle_slack_events():
             # Return a 200 OK for all events to acknowledge receipt
             return jsonify({"status": "ok"})
 
-        # Handle payload from interactive components
+        # Handle payload from interactive components (application/x-www-form-urlencoded)
         payload = request.form.get('payload')
-        if not payload:
-            logger.warning("No payload found in request")
-            return jsonify({"status": "ok"}), 200  # Return 200 even for empty requests
-
-        data = json.loads(payload)
+        if payload:
+            logger.info("Processing form payload")
+            data = json.loads(payload)
+        else:
+            # Try to get raw data if not in form or json
+            try:
+                raw_data = request.get_data(as_text=True)
+                logger.info(f"Raw data: {raw_data[:200]}...") # Log first 200 chars
+                if raw_data and raw_data.startswith('{'):
+                    data = json.loads(raw_data)
+                else:
+                    logger.warning("No valid payload found in request")
+                    return jsonify({"status": "ok"}), 200
+            except Exception as e:
+                logger.error(f"Error parsing request data: {e}")
+                return jsonify({"status": "ok"}), 200
 
         # Handle ticket submission
         if data.get("type") == "view_submission" and data["view"]["callback_id"] == "new_ticket":
