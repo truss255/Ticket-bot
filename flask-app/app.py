@@ -1656,27 +1656,27 @@ def handle_slack_events():
                         ]
                     }
                 ]
-                message_blocks[-1]["elements"] = [elem for elem in message_blocks[-1]["elements"] if elem]
-                # Post ticket to main channel
-                response = client.chat_postMessage(channel=SLACK_CHANNEL_ID, blocks=message_blocks)
+                    message_blocks[-1]["elements"] = [elem for elem in message_blocks[-1]["elements"] if elem]
+                    # Post ticket to main channel
+                    response = client.chat_postMessage(channel=SLACK_CHANNEL_ID, blocks=message_blocks)
 
-                # Send notification to admin channel
-                admin_notification = f":ticket: *New Ticket Alert* | T{ticket_id} | {priority} Priority\n" + \
-                                    f">*Issue:* {issue_type}\n" + \
-                                    f">*Submitted by:* <@{user_id}>\n" + \
-                                    f">*Campaign:* {campaign}"
-                try:
-                    client.chat_postMessage(channel=ADMIN_CHANNEL, text=admin_notification)
-                except Exception as admin_err:
-                    logger.error(f"Error sending admin notification: {admin_err}")
+                    # Send notification to admin channel
+                    admin_notification = f":ticket: *New Ticket Alert* | T{ticket_id} | {priority} Priority\n" + \
+                                        f">*Issue:* {issue_type}\n" + \
+                                        f">*Submitted by:* <@{user_id}>\n" + \
+                                        f">*Campaign:* {campaign}"
+                    try:
+                        client.chat_postMessage(channel=ADMIN_CHANNEL, text=admin_notification)
+                    except Exception as admin_err:
+                        logger.error(f"Error sending admin notification: {admin_err}")
 
-                # Show confirmation modal to the agent
-                confirmation_view = {
-                    "type": "modal",
-                    "callback_id": "ticket_confirmation",
-                    "title": {"type": "plain_text", "text": "Ticket Submitted"},
-                    "close": {"type": "plain_text", "text": "Close"},
-                    "blocks": [
+                    # Show confirmation modal to the agent
+                    confirmation_view = {
+                        "type": "modal",
+                        "callback_id": "ticket_confirmation",
+                        "title": {"type": "plain_text", "text": "Ticket Submitted"},
+                        "close": {"type": "plain_text", "text": "Close"},
+                        "blocks": [
                         {
                             "type": "header",
                             "text": {"type": "plain_text", "text": "🎉 Ticket Submitted Successfully!", "emoji": True}
@@ -1719,25 +1719,25 @@ def handle_slack_events():
                     ]
                 }
 
-                # Add image preview if a file was uploaded
-                if file_url != "No file uploaded":
-                    confirmation_view["blocks"].insert(3, {
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": "*Attached Image:*"
-                        },
-                        "accessory": {
-                            "type": "image",
-                            "image_url": file_url,
-                            "alt_text": "Uploaded image"
-                        }
-                    })
-                client.views_open(trigger_id=data["trigger_id"], view=confirmation_view)
-                return jsonify({"response_action": "clear"})
-            except Exception as e:
-                logger.error(f"Error in new_ticket submission: {e}")
-                return jsonify({"text": "❌ Ticket submission failed"}), 500
+                    # Add image preview if a file was uploaded
+                    if file_url != "No file uploaded":
+                        confirmation_view["blocks"].insert(3, {
+                            "type": "section",
+                            "text": {
+                                "type": "mrkdwn",
+                                "text": "*Attached Image:*"
+                            },
+                            "accessory": {
+                                "type": "image",
+                                "image_url": file_url,
+                                "alt_text": "Uploaded image"
+                            }
+                        })
+                    client.views_open(trigger_id=data["trigger_id"], view=confirmation_view)
+                    return jsonify({"response_action": "clear"})
+                except Exception as e:
+                    logger.error(f"Error in new_ticket submission: {e}")
+                    return jsonify({"text": "❌ Ticket submission failed"}), 500
 
         # Handle assign-to-me action submission
         elif data.get("type") == "view_submission" and data["view"]["callback_id"] == "assign_to_me_action":
