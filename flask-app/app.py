@@ -310,8 +310,7 @@ def build_new_ticket_modal():
                 "element": {
                     "type": "file_input",
                     "action_id": "file_upload_input"
-                },
-                "optional": True
+                }
             }
         ]
     }
@@ -375,12 +374,12 @@ def agent_tickets():
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"🎟️ *T{ticket_id} - {status}* {status_emoji}\n" +
-                            f"📂 Campaign: {campaign}\n" +
-                            f"📌 Issue: {issue_type}\n" +
-                            f"⚡ Priority: {priority} {priority_emoji}\n" +
-                            f"👤 Assigned To: {f'@{assigned_to}' if assigned_to != 'Unassigned' else '❌ Unassigned'}\n" +
-                            f"📅 Created: {created_at.strftime('%m/%d/%Y')}"
+                    "text": f":ticket: *T{ticket_id} - {status}* {status_emoji}\n" +
+                            f":file_folder: Campaign: {campaign}\n" +
+                            f":pushpin: Issue: {issue_type}\n" +
+                            f":zap: Priority: {priority} {priority_emoji}\n" +
+                            f":bust_in_silhouette: Assigned To: {f'@{assigned_to}' if assigned_to != 'Unassigned' else ':x: Unassigned'}\n" +
+                            f":calendar: Created: {created_at.strftime('%m/%d/%Y')}"
                 },
                 "accessory": {
                     "type": "button",
@@ -396,14 +395,14 @@ def agent_tickets():
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "*🔹 Updated Features:*\n" +
-                        "✅ Agents can track ticket progress by checking the status\n" +
-                        "✅ Statuses are color-coded:\n\n" +
-                        "🟢 Open (Not yet assigned)\n\n" +
-                        "🔵 In Progress (A system user is working on it)\n\n" +
-                        "🟡 Resolved (Issue fixed, but not yet closed)\n\n" +
-                        "🔴 Closed (No further action needed)\n" +
-                        "✅ Clicking \"View Progress\" opens a detailed modal with updates"
+                "text": "*:small_blue_diamond: Updated Features:*\n" +
+                        ":white_check_mark: Agents can track ticket progress by checking the status\n" +
+                        ":white_check_mark: Statuses are color-coded:\n\n" +
+                        ":large_green_circle: Open (Not yet assigned)\n\n" +
+                        ":large_blue_circle: In Progress (A system user is working on it)\n\n" +
+                        ":yellow_circle: Resolved (Issue fixed, but not yet closed)\n\n" +
+                        ":red_circle: Closed (No further action needed)\n" +
+                        ":white_check_mark: Clicking \"View Progress\" opens a detailed modal with updates"
             }
         })
 
@@ -750,13 +749,13 @@ def handle_interactivity():
                             "type": "section",
                             "text": {
                                 "type": "mrkdwn",
-                                "text": f"✅ *Ticket ID:* T{ticket_id}\n" +
-                                        f"📂 *Campaign:* {campaign}\n" +
-                                        f"📌 *Issue:* {issue_type}\n" +
-                                        f"⚡ *Priority:* {priority} {priority_emoji}\n" +
-                                        f"👤 *Assigned To:* {f'@{assigned_to}' if assigned_to != 'Unassigned' else '❌ Unassigned'}\n" +
-                                        f"🔄 *Status:* {status} {status_emoji}\n" +
-                                        f"📅 *Created On:* {created_at.strftime('%m/%d/%Y')}\n"
+                                "text": f":white_check_mark: *Ticket ID:* T{ticket_id}\n" +
+                                        f":file_folder: *Campaign:* {campaign}\n" +
+                                        f":pushpin: *Issue:* {issue_type}\n" +
+                                        f":zap: *Priority:* {priority} {priority_emoji}\n" +
+                                        f":bust_in_silhouette: *Assigned To:* {f'@{assigned_to}' if assigned_to != 'Unassigned' else ':x: Unassigned'}\n" +
+                                        f":arrows_counterclockwise: *Status:* {status} {status_emoji}\n" +
+                                        f":calendar: *Created On:* {created_at.strftime('%m/%d/%Y')}\n"
                             }
                         },
                         {"type": "divider"},
@@ -764,7 +763,7 @@ def handle_interactivity():
                             "type": "section",
                             "text": {
                                 "type": "mrkdwn",
-                                "text": f"🔧 *Recent Updates:*\n{chr(10).join(updates)}"
+                                "text": f":wrench: *Recent Updates:*\n{chr(10).join(updates)}"
                             }
                         },
                         {
@@ -772,7 +771,7 @@ def handle_interactivity():
                             "elements": [
                                 {
                                     "type": "mrkdwn",
-                                    "text": "🔔 *You will receive updates when the status changes.*"
+                                    "text": ":bell: *You will receive updates when the status changes.*"
                                 }
                             ]
                         }
@@ -850,11 +849,11 @@ def handle_slack_events():
                         "type": "section",
                         "text": {
                             "type": "mrkdwn",
-                            "text": f"📂 *Campaign:* {campaign}\n\n"
-                                    f"📌 *Issue:* {issue_type}\n\n"
-                                    f"⚡ *Priority:* {priority} {' 🔴' if priority == 'High' else ' 🟡' if priority == 'Medium' else ' 🔵'}\n\n"
-                                    f"👤 *Submitted By:* <@{user_id}>\n\n"
-                                    f"🔄 *Status:* `Open` 🟢\n\n"
+                            "text": f":file_folder: *Campaign:* {campaign}\n\n"
+                                    f":pushpin: *Issue:* {issue_type}\n\n"
+                                    f":zap: *Priority:* {priority} {' :red_circle:' if priority == 'High' else ' :yellow_circle:' if priority == 'Medium' else ' :large_blue_circle:'}\n\n"
+                                    f":bust_in_silhouette: *Submitted By:* <@{user_id}>\n\n"
+                                    f":arrows_counterclockwise: *Status:* `Open` :large_green_circle:\n\n"
                         }
                     },
                     {"type": "divider"},
