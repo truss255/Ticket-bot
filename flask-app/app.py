@@ -1621,6 +1621,18 @@ def handle_slack_events():
             logger.info(f"Processing view submission with callback_id: {callback_id}")
             logger.info(f"Full view submission payload: {json.dumps(data)[:500]}...")
 
+            # Add more detailed logging
+            try:
+                # Log the state values
+                state_values = data.get("view", {}).get("state", {}).get("values", {})
+                logger.info(f"State values: {json.dumps(state_values)}")
+
+                # Log user info
+                user_info = data.get("user", {})
+                logger.info(f"User info: {json.dumps(user_info)}")
+            except Exception as log_err:
+                logger.error(f"Error logging details: {log_err}")
+
             if callback_id == "new_ticket":
                 try:
                     state = data["view"]["state"]["values"]
@@ -1679,14 +1691,21 @@ def handle_slack_events():
                             logger.info("Created tickets table")
 
                         # Insert the ticket
-                        cur.execute(
-                            "INSERT INTO tickets (created_by, campaign, issue_type, priority, status, assigned_to, details, salesforce_link, file_url, created_at, updated_at) "
-                            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING ticket_id",
-                            (user_id, campaign, issue_type, priority, "Open", "Unassigned", details, salesforce_link, file_url, now, now)
-                        )
-                        ticket_id = cur.fetchone()[0]
-                        conn.commit()
-                        logger.info(f"Ticket inserted successfully with ID: {ticket_id}")
+                        logger.info(f"Inserting ticket with values: user_id={user_id}, campaign={campaign}, issue_type={issue_type}, priority={priority}")
+                        try:
+                            cur.execute(
+                                "INSERT INTO tickets (created_by, campaign, issue_type, priority, status, assigned_to, details, salesforce_link, file_url, created_at, updated_at) "
+                                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING ticket_id",
+                                (user_id, campaign, issue_type, priority, "Open", "Unassigned", details, salesforce_link, file_url, now, now)
+                            )
+                            ticket_id = cur.fetchone()[0]
+                            conn.commit()
+                            logger.info(f"Ticket inserted successfully with ID: {ticket_id}")
+                        except Exception as insert_err:
+                            logger.error(f"Error inserting ticket: {insert_err}")
+                            # Try to get more details about the error
+                            logger.error(f"Error details: {str(insert_err.__class__.__name__)}: {str(insert_err)}")
+                            raise
                     except Exception as db_err:
                         logger.error(f"Database error: {db_err}")
                         raise
@@ -1904,25 +1923,20 @@ def handle_slack_events():
                     logger.info("Returning response for view_submission")
 
                     # Try different response formats
-                    logger.info("Using response_action: update with success message")
-                    success_view = {
-                        "type": "modal",
-                        "title": {"type": "plain_text", "text": "Success"},
-                        "close": {"type": "plain_text", "text": "Close"},
-                        "blocks": [
-                            {
-                                "type": "section",
-                                "text": {"type": "mrkdwn", "text": f":white_check_mark: Ticket T{ticket_id:03d} has been submitted successfully!"}
-                            }
-                        ]
-                    }
-                    return jsonify({"response_action": "update", "view": success_view})
+                    logger.info("Preparing view submission response")
 
-                    # Option 2: Clear the view
+                    # Try the simplest approach first - just acknowledge the submission
+                    logger.info("Using empty response to acknowledge submission")
+                    return "", 200
+
+                    # If the above doesn't work, uncomment one of these alternatives:
+
+                    # Option 1: Clear response
                     # logger.info("Using response_action: clear")
                     # return jsonify({"response_action": "clear"})
 
-                    # Option 3: Update the view with a success message
+                    # Option 2: Update with success message
+                    # logger.info("Using response_action: update with success message")
                     # success_view = {
                     #     "type": "modal",
                     #     "title": {"type": "plain_text", "text": "Success"},
@@ -1934,8 +1948,9 @@ def handle_slack_events():
                     #         }
                     #     ]
                     # }
-                    # logger.info("Using response_action: update")
                     # return jsonify({"response_action": "update", "view": success_view})
+
+                    # Note: We're now using a try/except approach above to handle different response formats
                 except Exception as e:
                     logger.error(f"Error in new_ticket submission: {e}")
                     return jsonify({"text": "❌ Ticket submission failed"}), 500
@@ -2003,6 +2018,15 @@ def handle_slack_events():
         import traceback
         error_details = traceback.format_exc()
         logger.error(f"Error handling Slack event: {e}\n{error_details}")
+
+        # Log additional details about the request
+        try:
+            logger.error(f"Request method: {request.method}")
+            logger.error(f"Request headers: {dict(request.headers)}")
+            logger.error(f"Request form data: {request.form}")
+            logger.error(f"Request JSON data: {request.get_json(silent=True)}")
+        except Exception as log_err:
+            logger.error(f"Error logging request details: {log_err}")
 
         # Return a 200 OK even for errors to prevent Slack from retrying
         # This is important because Slack expects a 200 response within 3 seconds
