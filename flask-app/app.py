@@ -403,66 +403,40 @@ def agent_tickets():
                 ]
             })
 
-        # Add status explanation footer
+        # Add a simple footer
         blocks.append({"type": "divider"})
         blocks.append({
-            "type": "header",
-            "text": {"type": "plain_text", "text": "🔹 Updated Features", "emoji": True}
-        })
-
-        blocks.append({
             "type": "context",
             "elements": [
-                {"type": "mrkdwn", "text": ":white_check_mark: Agents can track ticket progress by checking the status"}
+                {"type": "mrkdwn", "text": "Click *View Progress* to see detailed ticket information and updates."}
             ]
         })
 
-        blocks.append({
-            "type": "context",
-            "elements": [
-                {"type": "mrkdwn", "text": ":white_check_mark: Statuses are color-coded:"}
-            ]
-        })
-
-        blocks.append({
-            "type": "context",
-            "elements": [
-                {"type": "mrkdwn", "text": ":large_green_circle: Open (Not yet assigned)"}
-            ]
-        })
-
-        blocks.append({
-            "type": "context",
-            "elements": [
-                {"type": "mrkdwn", "text": ":large_blue_circle: In Progress (A system user is working on it)"}
-            ]
-        })
-
-        blocks.append({
-            "type": "context",
-            "elements": [
-                {"type": "mrkdwn", "text": ":yellow_circle: Resolved (Issue fixed, but not yet closed)"}
-            ]
-        })
-
-        blocks.append({
-            "type": "context",
-            "elements": [
-                {"type": "mrkdwn", "text": ":red_circle: Closed (No further action needed)"}
-            ]
-        })
-
-        blocks.append({
-            "type": "context",
-            "elements": [
-                {"type": "mrkdwn", "text": ":white_check_mark: Clicking \"View Progress\" opens a detailed modal with updates"}
-            ]
-        })
-
-        return jsonify({
-            "response_type": "ephemeral",
+        # Create a modal view instead of an ephemeral message
+        modal = {
+            "type": "modal",
+            "title": {"type": "plain_text", "text": "Your Tickets", "emoji": True},
+            "close": {"type": "plain_text", "text": "Close", "emoji": True},
             "blocks": blocks
-        }), 200
+        }
+
+        # Get the trigger_id from the request
+        trigger_id = request.form.get('trigger_id')
+
+        if trigger_id:
+            try:
+                # Open the modal view
+                client.views_open(trigger_id=trigger_id, view=modal)
+                return "", 200
+            except Exception as e:
+                logger.error(f"Error opening modal: {e}")
+                return jsonify({"text": "❌ An error occurred while displaying your tickets."}), 200
+        else:
+            # Fallback to ephemeral message if no trigger_id
+            return jsonify({
+                "response_type": "ephemeral",
+                "blocks": blocks
+            }), 200
     except Exception as e:
         logger.error(f"Error in /api/tickets/agent-tickets: {e}")
         return jsonify({"text": "❌ An error occurred. Please try again later."}), 200
