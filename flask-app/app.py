@@ -311,7 +311,8 @@ def build_new_ticket_modal():
                     "type": "file_input",
                     "action_id": "file_upload_input"
                 },
-                "optional": True
+                "optional": True,
+                "hint": {"type": "plain_text", "text": "Accepted formats: PNG, JPG, GIF. Max size: 10MB"}
             }
         ]
     }
@@ -332,37 +333,73 @@ def index():
         ]
     })
 
-@app.route('/api/tickets/agent-tickets', methods=['POST'])
-def agent_tickets():
-    logger.info("Received /api/tickets/agent-tickets request")
+def build_agent_tickets_modal(user_id, filter_status=None):
+    """Build a modal for agent tickets with filtering options"""
+    # Fetch tickets with optional filters
+    conn = db_pool.getconn()
     try:
-        # Log the request data for debugging
-        logger.info(f"Request form data: {request.form}")
+        cur = conn.cursor()
+        query = "SELECT * FROM tickets WHERE created_by = %s"
+        params = [user_id]
 
-        user_id = request.form.get('user_id')
-        if not user_id:
-            return jsonify({"text": "Error: Could not identify user."}), 200
+        if filter_status and filter_status != "all":
+            query += " AND status = %s"
+            params.append(filter_status)
 
-        # Fetch tickets submitted by this user
-        conn = db_pool.getconn()
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT * FROM tickets WHERE created_by = %s ORDER BY created_at DESC", (user_id,))
-            tickets = cur.fetchall()
-        finally:
-            db_pool.putconn(conn)
+        query += " ORDER BY created_at DESC"
 
-        if not tickets:
-            return jsonify({"text": "You haven't submitted any tickets yet."}), 200
+        cur.execute(query, params)
+        tickets = cur.fetchall()
+    finally:
+        db_pool.putconn(conn)
 
-        # Build a modal to display the tickets
-        blocks = [
-            {
-                "type": "header",
-                "text": {"type": "plain_text", "text": "🗂️ Your Submitted Tickets"}
-            }
-        ]
+    # Build the modal blocks
+    blocks = [
+        {"type": "header", "text": {"type": "plain_text", "text": "🗂️ Your Tickets", "emoji": True}},
+        # Add filter options
+        {
+            "type": "actions",
+            "block_id": "agent_ticket_filters",
+            "elements": [
+                {
+                    "type": "static_select",
+                    "action_id": "agent_filter_status",
+                    "placeholder": {"type": "plain_text", "text": "Filter by Status"},
+                    "options": [
+                        {"text": {"type": "plain_text", "text": "All Statuses"}, "value": "all"},
+                        {"text": {"type": "plain_text", "text": "🟢 Open"}, "value": "Open"},
+                        {"text": {"type": "plain_text", "text": "🔵 In Progress"}, "value": "In Progress"},
+                        {"text": {"type": "plain_text", "text": "🟡 Resolved"}, "value": "Resolved"},
+                        {"text": {"type": "plain_text", "text": "🔴 Closed"}, "value": "Closed"}
+                    ]
+                },
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "📝 New Ticket", "emoji": True},
+                    "action_id": "create_new_ticket",
+                    "style": "primary"
+                }
+            ]
+        },
+        {"type": "divider"}
+    ]
 
+    # Add ticket information
+    if not tickets:
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "You haven't submitted any tickets yet."}
+        })
+    else:
+        # Show current filters if any are applied
+        if filter_status and filter_status != "all":
+            blocks.append({
+                "type": "context",
+                "elements": [{"type": "mrkdwn", "text": f"*Showing {filter_status} tickets only*"}]
+            })
+            blocks.append({"type": "divider"})
+
+        # Add tickets
         for ticket in tickets:
             ticket_id, created_by, campaign, issue_type, priority, status, assigned_to, details, salesforce_link, file_url, created_at, updated_at = ticket
 
@@ -370,12 +407,11 @@ def agent_tickets():
             status_emoji = "🟢" if status == "Open" else "🔵" if status == "In Progress" else "🟡" if status == "Resolved" else "🔴"
             priority_emoji = "🔴" if priority == "High" else "🟡" if priority == "Medium" else "🔵"
 
-            blocks.append({"type": "divider"})
             blocks.append({
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f":ticket: *T{ticket_id} - {status}* {status_emoji}"
+                    "text": f":ticket: *T{ticket_id:03d} - {status}* {status_emoji}"
                 },
                 "accessory": {
                     "type": "button",
@@ -403,16 +439,33 @@ def agent_tickets():
                 ]
             })
 
-        # Add a simple footer
-        blocks.append({"type": "divider"})
-        blocks.append({
-            "type": "context",
-            "elements": [
-                {"type": "mrkdwn", "text": "Click *View Progress* to see detailed ticket information and updates."}
-            ]
-        })
+            blocks.append({"type": "divider"})
 
-        # Create a modal view instead of an ephemeral message
+    # Add a simple footer
+    blocks.append({
+        "type": "context",
+        "elements": [
+            {"type": "mrkdwn", "text": "Click *View Progress* to see detailed ticket information and updates."}
+        ]
+    })
+
+    return blocks
+
+@app.route('/api/tickets/agent-tickets', methods=['POST'])
+def agent_tickets():
+    logger.info("Received /api/tickets/agent-tickets request")
+    try:
+        # Log the request data for debugging
+        logger.info(f"Request form data: {request.form}")
+
+        user_id = request.form.get('user_id')
+        if not user_id:
+            return jsonify({"text": "Error: Could not identify user."}), 200
+
+        # Build the modal blocks with filtering
+        blocks = build_agent_tickets_modal(user_id)
+
+        # Create a modal view
         modal = {
             "type": "modal",
             "title": {"type": "plain_text", "text": "Your Tickets", "emoji": True},
@@ -441,6 +494,206 @@ def agent_tickets():
         logger.error(f"Error in /api/tickets/agent-tickets: {e}")
         return jsonify({"text": "❌ An error occurred. Please try again later."}), 200
 
+def build_system_tickets_modal(filter_status=None, filter_priority=None, filter_campaign=None):
+    """Build a modal for system tickets with filtering options"""
+    # Fetch tickets with optional filters
+    conn = db_pool.getconn()
+    try:
+        cur = conn.cursor()
+        query = "SELECT * FROM tickets"
+        params = []
+        where_clauses = []
+
+        if filter_status and filter_status != "all":
+            where_clauses.append("status = %s")
+            params.append(filter_status)
+
+        if filter_priority and filter_priority != "all":
+            where_clauses.append("priority = %s")
+            params.append(filter_priority)
+
+        if filter_campaign and filter_campaign != "all":
+            where_clauses.append("campaign = %s")
+            params.append(filter_campaign)
+
+        if where_clauses:
+            query += " WHERE " + " AND ".join(where_clauses)
+
+        query += " ORDER BY created_at DESC"
+
+        cur.execute(query, params)
+        tickets = cur.fetchall()
+
+        # Get unique campaigns for filter dropdown
+        cur.execute("SELECT DISTINCT campaign FROM tickets ORDER BY campaign")
+        campaigns = [row[0] for row in cur.fetchall()]
+    finally:
+        db_pool.putconn(conn)
+
+    # Build the modal blocks
+    blocks = [
+        {"type": "header", "text": {"type": "plain_text", "text": "System Tickets", "emoji": True}},
+        # Add filter options
+        {
+            "type": "actions",
+            "block_id": "ticket_filters",
+            "elements": [
+                {
+                    "type": "static_select",
+                    "action_id": "filter_status",
+                    "placeholder": {"type": "plain_text", "text": "Filter by Status"},
+                    "options": [
+                        {"text": {"type": "plain_text", "text": "All Statuses"}, "value": "all"},
+                        {"text": {"type": "plain_text", "text": "🟢 Open"}, "value": "Open"},
+                        {"text": {"type": "plain_text", "text": "🔵 In Progress"}, "value": "In Progress"},
+                        {"text": {"type": "plain_text", "text": "🟡 Resolved"}, "value": "Resolved"},
+                        {"text": {"type": "plain_text", "text": "🔴 Closed"}, "value": "Closed"}
+                    ]
+                },
+                {
+                    "type": "static_select",
+                    "action_id": "filter_priority",
+                    "placeholder": {"type": "plain_text", "text": "Filter by Priority"},
+                    "options": [
+                        {"text": {"type": "plain_text", "text": "All Priorities"}, "value": "all"},
+                        {"text": {"type": "plain_text", "text": "🔴 High"}, "value": "High"},
+                        {"text": {"type": "plain_text", "text": "🟡 Medium"}, "value": "Medium"},
+                        {"text": {"type": "plain_text", "text": "🔵 Low"}, "value": "Low"}
+                    ]
+                },
+                {
+                    "type": "static_select",
+                    "action_id": "filter_campaign",
+                    "placeholder": {"type": "plain_text", "text": "Filter by Campaign"},
+                    "options": [{"text": {"type": "plain_text", "text": "All Campaigns"}, "value": "all"}] +
+                               [{"text": {"type": "plain_text", "text": campaign}, "value": campaign} for campaign in campaigns]
+                },
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "📊 Export", "emoji": True},
+                    "action_id": "export_tickets",
+                    "style": "primary"
+                }
+            ]
+        },
+        {"type": "divider"}
+    ]
+
+    # Add ticket information
+    if not tickets:
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "No tickets found matching the selected filters."}
+        })
+    else:
+        # Show current filters if any are applied
+        filter_text = []
+        if filter_status and filter_status != "all":
+            filter_text.append(f"Status: {filter_status}")
+        if filter_priority and filter_priority != "all":
+            filter_text.append(f"Priority: {filter_priority}")
+        if filter_campaign and filter_campaign != "all":
+            filter_text.append(f"Campaign: {filter_campaign}")
+
+        if filter_text:
+            blocks.append({
+                "type": "context",
+                "elements": [{"type": "mrkdwn", "text": f"*Filters applied:* {', '.join(filter_text)}"}]
+            })
+            blocks.append({"type": "divider"})
+
+        # Add tickets
+        for ticket in tickets:
+            ticket_id, created_by, campaign, issue_type, priority, status, assigned_to, details, salesforce_link, file_url, created_at, updated_at = ticket
+
+            # Define status emoji
+            status_emoji = "🟢" if status == "Open" else "🔵" if status == "In Progress" else "🟡" if status == "Resolved" else "🔴"
+            priority_emoji = "🔴" if priority == "High" else "🟡" if priority == "Medium" else "🔵"
+
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*T{ticket_id:03d}* - `{status}` {status_emoji}"
+                },
+                "accessory": {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "👀 View Details", "emoji": True},
+                    "value": str(ticket_id),
+                    "action_id": f"view_system_ticket_{ticket_id}"
+                }
+            })
+
+            # Add ticket details in a more spaced out format
+            blocks.append({
+                "type": "context",
+                "elements": [
+                    {"type": "mrkdwn", "text": f":file_folder: Campaign: {campaign}"},
+                    {"type": "mrkdwn", "text": f":pushpin: Issue: {issue_type}"}
+                ]
+            })
+
+            blocks.append({
+                "type": "context",
+                "elements": [
+                    {"type": "mrkdwn", "text": f":zap: Priority: {priority} {priority_emoji}"},
+                    {"type": "mrkdwn", "text": f":bust_in_silhouette: Assigned To: {f'@{assigned_to}' if assigned_to != 'Unassigned' else ':x: Unassigned'}"},
+                    {"type": "mrkdwn", "text": f":calendar: Created: {created_at.strftime('%m/%d/%Y')}"}
+                ]
+            })
+
+            # Add action buttons based on ticket status
+            action_elements = []
+
+            if status == "Open":
+                action_elements.append({
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "🖐 Assign to Me", "emoji": True},
+                    "value": str(ticket_id),
+                    "action_id": f"system_assign_to_me_{ticket_id}",
+                    "style": "primary"
+                })
+
+            if status in ["Open", "In Progress"]:
+                action_elements.append({
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "🔁 Reassign", "emoji": True},
+                    "value": str(ticket_id),
+                    "action_id": f"system_reassign_{ticket_id}"
+                })
+                action_elements.append({
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "🟢 Resolve", "emoji": True},
+                    "value": str(ticket_id),
+                    "action_id": f"system_resolve_{ticket_id}",
+                    "style": "primary"
+                })
+                action_elements.append({
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "❌ Close", "emoji": True},
+                    "value": str(ticket_id),
+                    "action_id": f"system_close_{ticket_id}",
+                    "style": "danger"
+                })
+
+            if status in ["Resolved", "Closed"]:
+                action_elements.append({
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "🔄 Reopen", "emoji": True},
+                    "value": str(ticket_id),
+                    "action_id": f"system_reopen_{ticket_id}"
+                })
+
+            if action_elements:
+                blocks.append({
+                    "type": "actions",
+                    "elements": action_elements
+                })
+
+            blocks.append({"type": "divider"})
+
+    return blocks
+
 @app.route('/api/tickets/system-tickets', methods=['POST'])
 def system_tickets():
     logger.info("Received /api/tickets/system-tickets request")
@@ -454,50 +707,52 @@ def system_tickets():
 
         # Check if user is a system user
         if not is_system_user(user_id):
-            return jsonify({"text": "❌ You do not have permission to view system tickets."}), 200
+            # Log the user ID for debugging
+            logger.info(f"User {user_id} attempted to access system tickets but is not in SYSTEM_USERS list: {SYSTEM_USERS}")
+            return jsonify({
+                "response_type": "ephemeral",
+                "blocks": [
+                    {
+                        "type": "section",
+                        "text": {"type": "mrkdwn", "text": "❌ You do not have permission to view system tickets."}
+                    },
+                    {
+                        "type": "context",
+                        "elements": [
+                            {"type": "mrkdwn", "text": f"Your user ID: `{user_id}`\nTo gain access, ask an administrator to add your ID to the SYSTEM_USERS environment variable."}
+                        ]
+                    }
+                ]
+            }), 200
 
-        # Fetch all tickets
-        conn = db_pool.getconn()
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT * FROM tickets ORDER BY created_at DESC")
-            tickets = cur.fetchall()
-        finally:
-            db_pool.putconn(conn)
+        # Build the modal blocks
+        blocks = build_system_tickets_modal()
 
-        if not tickets:
-            return jsonify({"text": "There are no tickets in the system."}), 200
-
-        # Build a modal to display the tickets
-        blocks = [
-            {
-                "type": "header",
-                "text": {"type": "plain_text", "text": "All System Tickets"}
-            }
-        ]
-
-        for ticket in tickets:
-            ticket_id, created_by, campaign, issue_type, priority, status, assigned_to, details, salesforce_link, file_url, created_at, updated_at = ticket
-            blocks.append({
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": f"*Ticket T{ticket_id}*\n" +
-                            f"*Created By:* <@{created_by}>\n" +
-                            f"*Campaign:* {campaign}\n" +
-                            f"*Issue:* {issue_type}\n" +
-                            f"*Priority:* {priority}\n" +
-                            f"*Status:* {status}\n" +
-                            f"*Assigned To:* {assigned_to if assigned_to != 'Unassigned' else 'Unassigned'}\n" +
-                            f"*Created:* {created_at.strftime('%m/%d/%Y %H:%M')}\n"
-                }
-            })
-            blocks.append({"type": "divider"})
-
-        return jsonify({
-            "response_type": "ephemeral",
+        # Create a modal view
+        modal = {
+            "type": "modal",
+            "title": {"type": "plain_text", "text": "System Tickets", "emoji": True},
+            "close": {"type": "plain_text", "text": "Close", "emoji": True},
             "blocks": blocks
-        }), 200
+        }
+
+        # Get the trigger_id from the request
+        trigger_id = request.form.get('trigger_id')
+
+        if trigger_id:
+            try:
+                # Open the modal view
+                client.views_open(trigger_id=trigger_id, view=modal)
+                return "", 200
+            except Exception as e:
+                logger.error(f"Error opening modal: {e}")
+                return jsonify({"text": "❌ An error occurred while displaying system tickets."}), 200
+        else:
+            # Fallback to ephemeral message if no trigger_id
+            return jsonify({
+                "response_type": "ephemeral",
+                "blocks": blocks
+            }), 200
     except Exception as e:
         logger.error(f"Error in /api/tickets/system-tickets: {e}")
         return jsonify({"text": "❌ An error occurred. Please try again later."}), 200
@@ -662,7 +917,82 @@ def handle_interactivity():
         trigger_id = data["trigger_id"]
         message_ts = data["message"]["ts"] if "message" in data else None
 
-        if action_id == "export_all_tickets":
+        # Handle filter actions for agent tickets
+        if action_id == "agent_filter_status":
+            # Get the selected filter value
+            view_id = data.get("view", {}).get("id")
+            selected_value = action["selected_option"]["value"]
+
+            # Build updated blocks with new filter
+            updated_blocks = build_agent_tickets_modal(user_id, selected_value if selected_value != "all" else None)
+
+            # Update the view
+            client.views_update(
+                view_id=view_id,
+                view={
+                    "type": "modal",
+                    "title": {"type": "plain_text", "text": "Your Tickets", "emoji": True},
+                    "close": {"type": "plain_text", "text": "Close", "emoji": True},
+                    "blocks": updated_blocks
+                }
+            )
+            return "", 200
+
+        # Handle create new ticket action from agent tickets modal
+        elif action_id == "create_new_ticket":
+            modal = build_new_ticket_modal()
+            client.views_open(trigger_id=trigger_id, view=modal)
+            return "", 200
+
+        # Handle filter actions for system tickets
+        elif action_id in ["filter_status", "filter_priority", "filter_campaign"]:
+            if not is_system_user(user_id):
+                return jsonify({"text": "❌ You do not have permission to filter tickets."}), 403
+
+            # Get the selected filter values from the view state
+            view_id = data.get("view", {}).get("id")
+
+            # Get current filter values from the action
+            selected_value = action["selected_option"]["value"]
+
+            # Get existing view to extract other filter values
+            view_info = client.views_retrieve(view_id=view_id)
+            blocks = view_info["view"]["blocks"]
+
+            # Find the filter actions block
+            filter_block = next((b for b in blocks if b.get("block_id") == "ticket_filters"), None)
+
+            if filter_block:
+                # Extract current filter values
+                filter_status = None
+                filter_priority = None
+                filter_campaign = None
+
+                # Update with the new selection
+                if action_id == "filter_status":
+                    filter_status = selected_value if selected_value != "all" else None
+                elif action_id == "filter_priority":
+                    filter_priority = selected_value if selected_value != "all" else None
+                elif action_id == "filter_campaign":
+                    filter_campaign = selected_value if selected_value != "all" else None
+
+                # Build updated blocks with new filters
+                updated_blocks = build_system_tickets_modal(filter_status, filter_priority, filter_campaign)
+
+                # Update the view
+                client.views_update(
+                    view_id=view_id,
+                    view={
+                        "type": "modal",
+                        "title": {"type": "plain_text", "text": "System Tickets", "emoji": True},
+                        "close": {"type": "plain_text", "text": "Close", "emoji": True},
+                        "blocks": updated_blocks
+                    }
+                )
+            return "", 200
+
+        # Handle export tickets action
+        elif action_id == "export_tickets" or action_id == "export_all_tickets":
             if not is_system_user(user_id):
                 return jsonify({"text": "❌ You do not have permission to export tickets."}), 403
             modal = build_export_filter_modal()
@@ -777,7 +1107,7 @@ def handle_interactivity():
                             "type": "section",
                             "text": {
                                 "type": "mrkdwn",
-                                "text": f"*T{ticket_id}* - `{status}` {status_emoji}"
+                                "text": f"*T{ticket_id:03d}* - `{status}` {status_emoji}"
                             }
                         },
                         # Campaign and Issue in a context block for cleaner appearance
@@ -889,7 +1219,7 @@ def handle_slack_events():
                 # Post the ticket details message to the channel
                 message_blocks = [
                     {"type": "header", "text": {"type": "plain_text", "text": "🎫 Ticket Details", "emoji": True}},
-                    {"type": "section", "text": {"type": "mrkdwn", "text": f":ticket: *New Ticket Alert* | T{ticket_id} | {priority} Priority {':fire:' if priority == 'High' else ':hourglass_flowing_sand:' if priority == 'Medium' else ''}\n\n"}},
+                    {"type": "section", "text": {"type": "mrkdwn", "text": f":ticket: *New Ticket Alert* | T{ticket_id:03d} | {priority} Priority {':fire:' if priority == 'High' else ':hourglass_flowing_sand:' if priority == 'Medium' else ''}\n\n"}},
                     {
                         "type": "section",
                         "text": {
@@ -943,7 +1273,7 @@ def handle_slack_events():
                             "type": "section",
                             "text": {
                                 "type": "mrkdwn",
-                                "text": f"✅ *Ticket ID:* T{ticket_id}\n"
+                                "text": f"✅ *Ticket ID:* T{ticket_id:03d}\n"
                                         f"📂 *Campaign:* {campaign}\n"
                                         f"📌 *Issue Type:* {issue_type}\n"
                                         f"⚡ *Priority:* {priority} {' 🔴' if priority == 'High' else ' 🟡' if priority == 'Medium' else ' 🔵'}\n"
@@ -1023,7 +1353,7 @@ def handle_slack_events():
             # Update the channel message with comments and all buttons
             message_blocks = [
                 {"type": "header", "text": {"type": "plain_text", "text": "🎫 Ticket Details", "emoji": True}},
-                {"type": "section", "text": {"type": "mrkdwn", "text": f":white_check_mark: *Ticket ID:* T{ticket_id}\n\n"}},
+                {"type": "section", "text": {"type": "mrkdwn", "text": f":white_check_mark: *Ticket ID:* T{ticket_id:03d}\n\n"}},
                 {
                     "type": "section",
                     "text": {
@@ -1111,7 +1441,7 @@ def check_stale_tickets():
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": f"*T{ticket_id}* | {priority} Priority | {status} | {days_stale} days without updates\n"
+                        "text": f"*T{ticket_id:03d}* | {priority} Priority | {status} | {days_stale} days without updates\n"
                                 f">*Issue:* {issue_type}\n"
                                 f">*Assigned to:* {f'<@{assigned_to}>' if assigned_to != 'Unassigned' else 'Unassigned'}\n"
                                 f">*Campaign:* {campaign}"
