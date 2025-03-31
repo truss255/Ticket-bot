@@ -1086,13 +1086,66 @@ def new_ticket():
 def handle_interactivity():
     logger.info("Received /api/tickets/slack/interactivity request")
     try:
+        # Log request details for debugging
+        logger.info(f"Content-Type: {request.content_type}")
+        logger.info(f"Form data keys: {list(request.form.keys())}")
+
+        # Get payload from form data
         payload = request.form.get('payload')
-        data = json.loads(payload)
-        action = data["actions"][0]
-        action_id = action["action_id"]
-        user_id = data["user"]["id"]
-        trigger_id = data["trigger_id"]
-        message_ts = data["message"]["ts"] if "message" in data else None
+        if not payload:
+            logger.error("No payload found in request")
+            return jsonify({"error": "No payload found"}), 400
+
+        # Parse the payload
+        try:
+            data = json.loads(payload)
+            logger.info(f"Payload type: {data.get('type')}")
+
+            # Log the full payload for debugging (truncated for privacy)
+            payload_preview = json.dumps(data)[:500] + "..." if len(json.dumps(data)) > 500 else json.dumps(data)
+            logger.info(f"Payload preview: {payload_preview}")
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse payload: {e}")
+            return jsonify({"error": "Invalid JSON payload"}), 400
+
+        # Handle different types of interactions
+        interaction_type = data.get('type')
+
+        # Handle view submissions (modal forms)
+        if interaction_type == 'view_submission':
+            logger.info("Processing view submission")
+            view_id = data.get('view', {}).get('id')
+            callback_id = data.get('view', {}).get('callback_id')
+            user_id = data.get('user', {}).get('id')
+
+            # Handle specific view submissions based on callback_id
+            if callback_id == 'new_ticket':
+                # This will be handled by the handle_slack_events function
+                return jsonify({"response_action": "clear"})
+
+            return jsonify({"response_action": "clear"})
+
+        # Handle block actions (buttons, selects, etc.)
+        elif interaction_type == 'block_actions':
+            logger.info("Processing block action")
+
+            # Check if actions array exists and is not empty
+            if 'actions' not in data or not data['actions']:
+                logger.error("No actions found in block_actions payload")
+                return jsonify({"error": "No actions found"}), 400
+
+            action = data["actions"][0]
+            action_id = action.get("action_id")
+            user_id = data.get("user", {}).get("id")
+            trigger_id = data.get("trigger_id")
+            message_ts = data.get("message", {}).get("ts") if "message" in data else None
+
+            logger.info(f"Action ID: {action_id}, User ID: {user_id}")
+
+        # Handle other interaction types
+        else:
+            logger.warning(f"Unhandled interaction type: {interaction_type}")
+            return jsonify({"status": "ok"}), 200
 
         # Handle filter actions for agent tickets
         if action_id == "agent_filter_status":
@@ -1467,10 +1520,17 @@ def handle_interactivity():
                     db_pool.putconn(conn)
                 return "", 200
 
+        # If we get here, we've handled the interaction successfully
         return jsonify({"status": "success"})
     except Exception as e:
-        logger.error(f"Error in /slack/interactivity: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
+        # Log the full error with traceback
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"Error in /slack/interactivity: {e}\n{error_details}")
+
+        # Return a 200 OK even for errors to prevent Slack from retrying
+        # This is important because Slack expects a 200 response within 3 seconds
+        return jsonify({"status": "ok", "error": str(e)}), 200
 
 @app.route('/api/tickets/slack/events', methods=['POST'])
 def handle_slack_events():
@@ -1520,47 +1580,51 @@ def handle_slack_events():
                 return jsonify({"status": "ok"}), 200
 
         # Handle ticket submission
-        if data.get("type") == "view_submission" and data["view"]["callback_id"] == "new_ticket":
-            try:
-                state = data["view"]["state"]["values"]
-                campaign = state["campaign_block"]["campaign_select"]["selected_option"]["value"]
-                issue_type = state["issue_type_block"]["issue_type_select"]["selected_option"]["value"]
-                priority = state["priority_block"]["priority_select"]["selected_option"]["value"]
-                details = state["details_block"]["details_input"]["value"]
-                salesforce_link = state.get("salesforce_link_block", {}).get("salesforce_link_input", {}).get("value", "N/A")
-                user_id = data["user"]["id"]
+        if data.get("type") == "view_submission":
+            callback_id = data.get("view", {}).get("callback_id")
+            logger.info(f"Processing view submission with callback_id: {callback_id}")
 
-                # Check for file upload
-                file_url = "No file uploaded"
-                if "file_upload_block" in state and "file_upload_input" in state["file_upload_block"]:
-                    file_info = state["file_upload_block"]["file_upload_input"]
-                    if file_info and "files" in file_info and len(file_info["files"]) > 0:
-                        file_id = file_info["files"][0]["id"]
-                        # Get file info from Slack API
-                        try:
-                            file_response = client.files_info(file=file_id)
-                            if file_response and file_response["ok"]:
-                                file_url = file_response["file"]["url_private"]
-                                logger.info(f"File uploaded: {file_url}")
-                        except Exception as file_err:
-                            logger.error(f"Error getting file info: {file_err}")
-
-                conn = db_pool.getconn()
+            if callback_id == "new_ticket":
                 try:
-                    cur = conn.cursor()
-                    now = datetime.now(pytz.timezone(TIMEZONE))
-                    cur.execute(
-                        "INSERT INTO tickets (created_by, campaign, issue_type, priority, status, assigned_to, details, salesforce_link, file_url, created_at, updated_at) "
-                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING ticket_id",
-                        (user_id, campaign, issue_type, priority, "Open", "Unassigned", details, salesforce_link, file_url, now, now)
-                    )
-                    ticket_id = cur.fetchone()[0]
-                    conn.commit()
-                finally:
-                    db_pool.putconn(conn)
+                    state = data["view"]["state"]["values"]
+                    campaign = state["campaign_block"]["campaign_select"]["selected_option"]["value"]
+                    issue_type = state["issue_type_block"]["issue_type_select"]["selected_option"]["value"]
+                    priority = state["priority_block"]["priority_select"]["selected_option"]["value"]
+                    details = state["details_block"]["details_input"]["value"]
+                    salesforce_link = state.get("salesforce_link_block", {}).get("salesforce_link_input", {}).get("value", "N/A")
+                    user_id = data["user"]["id"]
 
-                # Post the ticket details message to the channel
-                message_blocks = [
+                    # Check for file upload
+                    file_url = "No file uploaded"
+                    if "file_upload_block" in state and "file_upload_input" in state["file_upload_block"]:
+                        file_info = state["file_upload_block"]["file_upload_input"]
+                        if file_info and "files" in file_info and len(file_info["files"]) > 0:
+                            file_id = file_info["files"][0]["id"]
+                            # Get file info from Slack API
+                            try:
+                                file_response = client.files_info(file=file_id)
+                                if file_response and file_response["ok"]:
+                                    file_url = file_response["file"]["url_private"]
+                                    logger.info(f"File uploaded: {file_url}")
+                            except Exception as file_err:
+                                logger.error(f"Error getting file info: {file_err}")
+
+                    conn = db_pool.getconn()
+                    try:
+                        cur = conn.cursor()
+                        now = datetime.now(pytz.timezone(TIMEZONE))
+                        cur.execute(
+                            "INSERT INTO tickets (created_by, campaign, issue_type, priority, status, assigned_to, details, salesforce_link, file_url, created_at, updated_at) "
+                            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING ticket_id",
+                            (user_id, campaign, issue_type, priority, "Open", "Unassigned", details, salesforce_link, file_url, now, now)
+                        )
+                        ticket_id = cur.fetchone()[0]
+                        conn.commit()
+                    finally:
+                        db_pool.putconn(conn)
+
+                    # Post the ticket details message to the channel
+                    message_blocks = [
                     {"type": "header", "text": {"type": "plain_text", "text": "🎫 Ticket Details", "emoji": True}},
                     {"type": "section", "text": {"type": "mrkdwn", "text": f":ticket: *New Ticket Alert* | T{ticket_id:03d} | {priority} Priority {':fire:' if priority == 'High' else ':hourglass_flowing_sand:' if priority == 'Medium' else ''}\n\n"}},
                     {
@@ -1729,11 +1793,17 @@ def handle_slack_events():
             return jsonify({"response_action": "clear"})
 
     except Exception as e:
-        logger.error(f"Error handling Slack event: {e}")
-        return jsonify({"text": "❌ An error occurred while processing the event."}), 500
+        # Log the full error with traceback
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"Error handling Slack event: {e}\n{error_details}")
+
+        # Return a 200 OK even for errors to prevent Slack from retrying
+        # This is important because Slack expects a 200 response within 3 seconds
+        return jsonify({"status": "ok", "error": str(e)}), 200
 
     # Default response if no conditions are met
-    return jsonify({"status": "success"}), 200
+    return jsonify({"status": "ok"}), 200
 
 # Scheduled Tasks (Optional)
 scheduler = BackgroundScheduler(timezone=pytz.timezone(TIMEZONE))
