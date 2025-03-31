@@ -1717,36 +1717,7 @@ def handle_slack_events():
                         salesforce_link=salesforce_link,
                         file_url=file_url
                     )
-                    # For backward compatibility, keep this line
-                    # message_blocks = [
-                    {"type": "header", "text": {"type": "plain_text", "text": "🎫 Ticket Details", "emoji": True}},
-                    {"type": "section", "text": {"type": "mrkdwn", "text": f":ticket: *New Ticket Alert* | T{ticket_id:03d} | {priority} Priority {':fire:' if priority == 'High' else ':hourglass_flowing_sand:' if priority == 'Medium' else ''}\n\n"}},
-                    {
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": f"📂 *Campaign:* {campaign}\n\n"
-                                    f"📌 *Issue:* {issue_type}\n\n"
-                                    f"⚡ *Priority:* {priority} {' 🔴' if priority == 'High' else ' 🟡' if priority == 'Medium' else ' 🔵'}\n\n"
-                                    f"👤 *Submitted By:* <@{user_id}>\n\n"
-                                    f"🔄 *Status:* `Open` 🟢\n\n"
-                        }
-                    },
-                    {"type": "divider"},
-                    {"type": "section", "text": {"type": "mrkdwn", "text": f"✏️ *Details:* {details}\n\n"}},
-                    {"type": "section", "text": {"type": "mrkdwn", "text": f":link: *Salesforce Link:* {salesforce_link}\n\n"}},
-                    {"type": "section", "text": {"type": "mrkdwn", "text": f":camera: *Screenshot/Image:* {f'<{file_url}|View Image>' if file_url != 'No file uploaded' else 'No image uploaded'}\n\n"}},
-                    {"type": "section", "text": {"type": "mrkdwn", "text": f":calendar: *Created:* {now.strftime('%m/%d/%Y %I:%M %p')} ({now.strftime('%A')})\n\n"}},
-                    {"type": "divider"},
-                    {
-                        "type": "actions",
-                        "elements": [
-                            {"type": "button", "text": {"type": "plain_text", "text": "🖐 Assign to Me", "emoji": True}, "action_id": f"assign_to_me_{ticket_id}", "value": str(ticket_id), "style": "primary"} if is_system_user(user_id) else None
-                        ]
-                    }
-                ]
-                    # No need to filter elements anymore as the template handles this
-                    # message_blocks[-1]["elements"] = [elem for elem in message_blocks[-1]["elements"] if elem]
+
                     # Post ticket to main channel
                     logger.info(f"Posting ticket to channel: {SLACK_CHANNEL_ID}")
                     logger.info(f"Message blocks: {json.dumps(message_blocks[:2])}...")
