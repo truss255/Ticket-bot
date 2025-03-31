@@ -1717,7 +1717,6 @@ def handle_slack_events():
                         salesforce_link=salesforce_link,
                         file_url=file_url
                     )
-
                     # For backward compatibility, keep this line
                     # message_blocks = [
                     {"type": "header", "text": {"type": "plain_text", "text": "🎫 Ticket Details", "emoji": True}},

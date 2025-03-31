@@ -45,6 +45,15 @@ This Flask app is a Slack bot designed to manage tickets within a Slack workspac
 
 ## Setup Instructions
 
+### Project Structure
+
+The application consists of the following key files:
+
+- **`app.py`**: The main application file containing all the routes and business logic.
+- **`ticket_templates.py`**: Contains template functions for formatting ticket messages in Slack.
+- **`check_db_route.py`**: Utility for checking database tables and their contents.
+- **`fix_app.py`**: Utility script to fix syntax errors in app.py.
+
 ### Environment Variables
 
 The following environment variables must be set for the app to function correctly:
@@ -72,6 +81,42 @@ The app includes an `init_db()` function that creates the necessary database tab
 - **`/system-tickets`**: Displays all tickets in the system (only available to system users).
 - **`/ticket-summary`**: Shows a summary of ticket statistics (only available to system users).
 
+### Ticket Message Formats
+
+#### System Issues Channel Message
+
+```
+🎫 New Ticket Created! (T001)
+----------------------------
+
+📂 Campaign: Camp Lejeune    📌 Issue: Salesforce Freeze
+⚡ Priority: 🔴 High          👤 Assigned To: ❌ Unassigned
+🔄 Status: 🟢 Open            👤 Submitted By: @Tanya.Russell
+
+✏️ Details: Salesforce is not loading for multiple agents.
+
+🔗 Salesforce Link: Click Here
+📷 File Attachment: View Screenshot
+----------------------------
+
+🔘 Assign to Me
+```
+
+#### Agent Confirmation Message
+
+```
+✅ Ticket Submitted Successfully!
+
+🎟️ Ticket ID: T001
+📂 Campaign: Camp Lejeune
+📌 Issue Type: Salesforce Freeze
+⚡ Priority: 🔴 High
+
+📣 Your ticket has been posted in `#systems-issues`.
+👀 The systems team has been notified and will review it shortly.
+📊 You can check your ticket status anytime using: `/agent-tickets`
+```
+
 ### Interacting with Ticket Messages
 
 System users can interact with ticket messages in the Slack channel using the following buttons:
@@ -97,6 +142,34 @@ The app includes the following scheduled tasks, managed by APScheduler:
 ## Deployment on Railway
 
 To deploy this app on Railway:
+
+### Fixing Syntax Errors
+
+If you encounter a syntax error with an unmatched closing bracket `]`, use the provided `fix_app.py` script:
+
+```
+cd flask-app
+python fix_app.py
+```
+
+Alternatively, you can manually fix the issue by editing app.py and replacing the message blocks code (around line 1708) with:
+
+```python
+# Use the template to create the ticket submission message blocks
+logger.info(f"Creating ticket submission blocks using template for ticket ID: {ticket_id}")
+message_blocks = get_ticket_submission_blocks(
+    ticket_id=ticket_id,
+    campaign=campaign,
+    issue_type=issue_type,
+    priority=priority,
+    user_id=user_id,
+    details=details,
+    salesforce_link=salesforce_link,
+    file_url=file_url
+)
+```
+
+### Deployment Steps
 
 1. **Create a Railway Project**:
    - Link your GitHub repository to a new Railway project.
