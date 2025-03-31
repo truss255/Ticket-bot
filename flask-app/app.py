@@ -70,13 +70,15 @@ try:
 except Exception as e:
     logger.error(f"Error initializing Slack client: {e}")
 
-# Set Slack channel ID
-SLACK_CHANNEL_ID = os.getenv("SLACK_CHANNEL_ID", "C08JTKR1RPT")
-logger.info(f"Using Slack channel ID: {SLACK_CHANNEL_ID}")
+# Set Slack channel ID - Use #systems-issues channel name instead of ID
+SLACK_CHANNEL_ID = os.getenv("SLACK_CHANNEL_ID", "#systems-issues")
+logger.info(f"Using Slack channel: {SLACK_CHANNEL_ID}")
 
-# Validate channel ID format
-if not SLACK_CHANNEL_ID.startswith("C"):
-    logger.warning(f"SLACK_CHANNEL_ID '{SLACK_CHANNEL_ID}' may not be valid - should start with 'C'")
+# If it's an ID (starts with C), validate the format
+if SLACK_CHANNEL_ID.startswith("C"):
+    logger.info(f"Using channel ID format: {SLACK_CHANNEL_ID}")
+else:
+    logger.info(f"Using channel name format: {SLACK_CHANNEL_ID}")
 
 # Verify channel access directly
 try:
@@ -1852,12 +1854,34 @@ def handle_slack_events():
                             priority=priority
                         )
 
-                        # Send a direct message to the user
-                        dm_response = client.chat_postMessage(
-                            channel=user_id,  # Sending DM to user
-                            text=f":white_check_mark: Your ticket T{ticket_id:03d} has been submitted successfully!",
-                            blocks=confirmation_blocks
-                        )
+                        # Try different approaches to send a confirmation message
+                        # First try opening a direct message channel
+                        try:
+                            # Open a DM channel first
+                            open_response = client.conversations_open(users=user_id)
+                            if open_response["ok"]:
+                                dm_channel = open_response["channel"]["id"]
+                                logger.info(f"Opened DM channel: {dm_channel}")
+
+                                # Send message to the DM channel
+                                dm_response = client.chat_postMessage(
+                                    channel=dm_channel,
+                                    text=f":white_check_mark: Your ticket T{ticket_id:03d} has been submitted successfully!",
+                                    blocks=confirmation_blocks
+                                )
+                                logger.info(f"DM sent via conversations_open: {dm_response.get('ts')}")
+                            else:
+                                logger.error(f"Failed to open DM channel: {open_response}")
+                                raise Exception("Failed to open DM channel")
+                        except Exception as open_err:
+                            logger.error(f"Error opening DM channel: {open_err}")
+
+                            # Fall back to direct message using user ID
+                            dm_response = client.chat_postMessage(
+                                channel=user_id,  # Sending DM to user
+                                text=f":white_check_mark: Your ticket T{ticket_id:03d} has been submitted successfully!",
+                                blocks=confirmation_blocks
+                            )
                         logger.info(f"Confirmation DM sent successfully: {dm_response.get('ts')}")
                     except Exception as dm_err:
                         logger.error(f"Error sending confirmation DM: {dm_err}")
@@ -1878,11 +1902,19 @@ def handle_slack_events():
                     logger.info("Returning response for view_submission")
 
                     # Try different response formats
-
-                    # Option 1: Just acknowledge with empty 200 response
-                    # This should close the modal and show no errors
-                    logger.info("Using empty 200 response")
-                    return "", 200
+                    logger.info("Using response_action: update with success message")
+                    success_view = {
+                        "type": "modal",
+                        "title": {"type": "plain_text", "text": "Success"},
+                        "close": {"type": "plain_text", "text": "Close"},
+                        "blocks": [
+                            {
+                                "type": "section",
+                                "text": {"type": "mrkdwn", "text": f":white_check_mark: Ticket T{ticket_id:03d} has been submitted successfully!"}
+                            }
+                        ]
+                    }
+                    return jsonify({"response_action": "update", "view": success_view})
 
                     # Option 2: Clear the view
                     # logger.info("Using response_action: clear")
