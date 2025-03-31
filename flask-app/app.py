@@ -53,8 +53,12 @@ client = WebClient(token=SLACK_BOT_TOKEN)
 logger.info("Slack client initialized.")
 
 # Set Slack channel ID
-SLACK_CHANNEL_ID = "C08JTKR1RPT"
+SLACK_CHANNEL_ID = os.getenv("SLACK_CHANNEL_ID", "C08JTKR1RPT")
 logger.info(f"Using Slack channel ID: {SLACK_CHANNEL_ID}")
+
+# Validate channel ID format
+if not SLACK_CHANNEL_ID.startswith("C"):
+    logger.warning(f"SLACK_CHANNEL_ID '{SLACK_CHANNEL_ID}' may not be valid - should start with 'C'")
 
 # Verify channel access directly
 try:
@@ -1635,10 +1639,39 @@ def handle_slack_events():
                             except Exception as file_err:
                                 logger.error(f"Error getting file info: {file_err}")
 
+                    logger.info("Inserting ticket into database")
                     conn = db_pool.getconn()
                     try:
                         cur = conn.cursor()
                         now = datetime.now(pytz.timezone(TIMEZONE))
+                        logger.info(f"Ticket data: user_id={user_id}, campaign={campaign}, issue_type={issue_type}, priority={priority}")
+
+                        # Check if the tickets table exists
+                        cur.execute("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'tickets')")
+                        table_exists = cur.fetchone()[0]
+                        if not table_exists:
+                            logger.error("Tickets table does not exist in the database!")
+                            # Create the table if it doesn't exist
+                            cur.execute("""
+                                CREATE TABLE IF NOT EXISTS tickets (
+                                    ticket_id SERIAL PRIMARY KEY,
+                                    created_by VARCHAR(255),
+                                    campaign VARCHAR(255),
+                                    issue_type VARCHAR(255),
+                                    priority VARCHAR(50),
+                                    status VARCHAR(50),
+                                    assigned_to VARCHAR(255),
+                                    details TEXT,
+                                    salesforce_link VARCHAR(255),
+                                    file_url VARCHAR(255),
+                                    created_at TIMESTAMP,
+                                    updated_at TIMESTAMP
+                                );
+                            """)
+                            conn.commit()
+                            logger.info("Created tickets table")
+
+                        # Insert the ticket
                         cur.execute(
                             "INSERT INTO tickets (created_by, campaign, issue_type, priority, status, assigned_to, details, salesforce_link, file_url, created_at, updated_at) "
                             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING ticket_id",
@@ -1646,6 +1679,10 @@ def handle_slack_events():
                         )
                         ticket_id = cur.fetchone()[0]
                         conn.commit()
+                        logger.info(f"Ticket inserted successfully with ID: {ticket_id}")
+                    except Exception as db_err:
+                        logger.error(f"Database error: {db_err}")
+                        raise
                     finally:
                         db_pool.putconn(conn)
 
@@ -1679,7 +1716,21 @@ def handle_slack_events():
                 ]
                     message_blocks[-1]["elements"] = [elem for elem in message_blocks[-1]["elements"] if elem]
                     # Post ticket to main channel
-                    response = client.chat_postMessage(channel=SLACK_CHANNEL_ID, blocks=message_blocks)
+                    logger.info(f"Posting ticket to channel: {SLACK_CHANNEL_ID}")
+                    logger.info(f"Message blocks: {json.dumps(message_blocks[:2])}...")
+                    try:
+                        # Try posting with blocks first
+                        response = client.chat_postMessage(channel=SLACK_CHANNEL_ID, blocks=message_blocks)
+                        logger.info(f"Message posted successfully: {response.get('ts')}")
+                    except Exception as post_err:
+                        logger.error(f"Error posting message with blocks: {post_err}")
+                        # Try a simpler message as fallback
+                        try:
+                            fallback_text = f"New Ticket T{ticket_id:03d} - {issue_type} - {priority} Priority - Submitted by <@{user_id}>"
+                            response = client.chat_postMessage(channel=SLACK_CHANNEL_ID, text=fallback_text)
+                            logger.info(f"Fallback message posted successfully: {response.get('ts')}")
+                        except Exception as fallback_err:
+                            logger.error(f"Error posting fallback message: {fallback_err}")
 
                     # Send notification to admin channel
                     admin_notification = f":ticket: *New Ticket Alert* | T{ticket_id} | {priority} Priority\n" + \
@@ -1754,8 +1805,33 @@ def handle_slack_events():
                                 "alt_text": "Uploaded image"
                             }
                         })
-                    client.views_open(trigger_id=data["trigger_id"], view=confirmation_view)
-                    return jsonify({"response_action": "clear"})
+                    logger.info(f"Opening confirmation modal with trigger_id: {data.get('trigger_id')}")
+                    try:
+                        modal_response = client.views_open(trigger_id=data["trigger_id"], view=confirmation_view)
+                        logger.info(f"Confirmation modal opened successfully: {modal_response.get('view', {}).get('id')}")
+                    except Exception as modal_err:
+                        logger.error(f"Error opening confirmation modal: {modal_err}")
+
+                    # For view_submission, Slack expects a specific response format
+                    # https://api.slack.com/reference/interaction-payloads/views#view_submission
+                    logger.info("Returning response for view_submission")
+
+                    # Option 1: Clear the view
+                    # return jsonify({"response_action": "clear"})
+
+                    # Option 2: Update the view with a success message
+                    success_view = {
+                        "type": "modal",
+                        "title": {"type": "plain_text", "text": "Success"},
+                        "close": {"type": "plain_text", "text": "Close"},
+                        "blocks": [
+                            {
+                                "type": "section",
+                                "text": {"type": "mrkdwn", "text": f":white_check_mark: Ticket T{ticket_id:03d} has been submitted successfully!"}
+                            }
+                        ]
+                    }
+                    return jsonify({"response_action": "update", "view": success_view})
                 except Exception as e:
                     logger.error(f"Error in new_ticket submission: {e}")
                     return jsonify({"text": "❌ Ticket submission failed"}), 500
