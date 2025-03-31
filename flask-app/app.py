@@ -166,7 +166,7 @@ def update_ticket_status(ticket_id, status, assigned_to=None, message_ts=None, c
 
             message_blocks = [
                 {"type": "header", "text": {"type": "plain_text", "text": "🎫 Ticket Updated", "emoji": True}},
-                {"type": "section", "text": {"type": "mrkdwn", "text": f":ticket: *Ticket Updated* | T{updated_ticket[0]} | {updated_ticket[4]} Priority {':fire:' if updated_ticket[4] == 'High' else ':hourglass_flowing_sand:' if updated_ticket[4] == 'Medium' else ''}\n\n"}},
+                {"type": "section", "text": {"type": "mrkdwn", "text": f":ticket: *Ticket Updated* | T{updated_ticket[0]:03d} | {updated_ticket[4]} Priority {':fire:' if updated_ticket[4] == 'High' else ':hourglass_flowing_sand:' if updated_ticket[4] == 'Medium' else ''}\n\n"}},
                 {
                     "type": "section",
                     "text": {
@@ -333,7 +333,7 @@ def index():
         ]
     })
 
-def build_agent_tickets_modal(user_id, filter_status=None):
+def build_agent_tickets_modal(user_id, filter_status=None, start_date=None, end_date=None):
     """Build a modal for agent tickets with filtering options"""
     # Fetch tickets with optional filters
     conn = db_pool.getconn()
@@ -345,6 +345,15 @@ def build_agent_tickets_modal(user_id, filter_status=None):
         if filter_status and filter_status != "all":
             query += " AND status = %s"
             params.append(filter_status)
+
+        # Add date range filters if provided
+        if start_date:
+            query += " AND created_at >= %s"
+            params.append(start_date)
+
+        if end_date:
+            query += " AND created_at <= %s"
+            params.append(end_date)
 
         query += " ORDER BY created_at DESC"
 
@@ -381,6 +390,30 @@ def build_agent_tickets_modal(user_id, filter_status=None):
                 }
             ]
         },
+        # Add date range filters
+        {
+            "type": "actions",
+            "block_id": "agent_date_filters",
+            "elements": [
+                {
+                    "type": "datepicker",
+                    "action_id": "agent_start_date",
+                    "placeholder": {"type": "plain_text", "text": "Start Date", "emoji": True},
+                    "initial_date": (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d") if start_date is None else start_date.strftime("%Y-%m-%d") if isinstance(start_date, datetime) else start_date
+                },
+                {
+                    "type": "datepicker",
+                    "action_id": "agent_end_date",
+                    "placeholder": {"type": "plain_text", "text": "End Date", "emoji": True},
+                    "initial_date": datetime.now().strftime("%Y-%m-%d") if end_date is None else end_date.strftime("%Y-%m-%d") if isinstance(end_date, datetime) else end_date
+                },
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "🔄 Apply Filters", "emoji": True},
+                    "action_id": "agent_apply_date_filter"
+                }
+            ]
+        },
         {"type": "divider"}
     ]
 
@@ -392,10 +425,18 @@ def build_agent_tickets_modal(user_id, filter_status=None):
         })
     else:
         # Show current filters if any are applied
+        filter_text = []
         if filter_status and filter_status != "all":
+            filter_text.append(f"Status: {filter_status}")
+        if start_date:
+            filter_text.append(f"From: {start_date.strftime('%m/%d/%Y')}")
+        if end_date:
+            filter_text.append(f"To: {end_date.strftime('%m/%d/%Y')}")
+
+        if filter_text:
             blocks.append({
                 "type": "context",
-                "elements": [{"type": "mrkdwn", "text": f"*Showing {filter_status} tickets only*"}]
+                "elements": [{"type": "mrkdwn", "text": f"*Filters applied:* {', '.join(filter_text)}"}]
             })
             blocks.append({"type": "divider"})
 
@@ -494,7 +535,7 @@ def agent_tickets():
         logger.error(f"Error in /api/tickets/agent-tickets: {e}")
         return jsonify({"text": "❌ An error occurred. Please try again later."}), 200
 
-def build_system_tickets_modal(filter_status=None, filter_priority=None, filter_campaign=None):
+def build_system_tickets_modal(filter_status=None, filter_priority=None, filter_campaign=None, start_date=None, end_date=None):
     """Build a modal for system tickets with filtering options"""
     # Fetch tickets with optional filters
     conn = db_pool.getconn()
@@ -515,6 +556,15 @@ def build_system_tickets_modal(filter_status=None, filter_priority=None, filter_
         if filter_campaign and filter_campaign != "all":
             where_clauses.append("campaign = %s")
             params.append(filter_campaign)
+
+        # Add date range filters if provided
+        if start_date:
+            where_clauses.append("created_at >= %s")
+            params.append(start_date)
+
+        if end_date:
+            where_clauses.append("created_at <= %s")
+            params.append(end_date)
 
         if where_clauses:
             query += " WHERE " + " AND ".join(where_clauses)
@@ -576,6 +626,31 @@ def build_system_tickets_modal(filter_status=None, filter_priority=None, filter_
                 }
             ]
         },
+        {"type": "divider"},
+        # Add date range filters
+        {
+            "type": "actions",
+            "block_id": "system_date_filters",
+            "elements": [
+                {
+                    "type": "datepicker",
+                    "action_id": "system_start_date",
+                    "placeholder": {"type": "plain_text", "text": "Start Date", "emoji": True},
+                    "initial_date": (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d") if start_date is None else start_date.strftime("%Y-%m-%d") if isinstance(start_date, datetime) else start_date
+                },
+                {
+                    "type": "datepicker",
+                    "action_id": "system_end_date",
+                    "placeholder": {"type": "plain_text", "text": "End Date", "emoji": True},
+                    "initial_date": datetime.now().strftime("%Y-%m-%d") if end_date is None else end_date.strftime("%Y-%m-%d") if isinstance(end_date, datetime) else end_date
+                },
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "🔄 Apply Date Filter", "emoji": True},
+                    "action_id": "system_apply_date_filter"
+                }
+            ]
+        },
         {"type": "divider"}
     ]
 
@@ -594,6 +669,10 @@ def build_system_tickets_modal(filter_status=None, filter_priority=None, filter_
             filter_text.append(f"Priority: {filter_priority}")
         if filter_campaign and filter_campaign != "all":
             filter_text.append(f"Campaign: {filter_campaign}")
+        if start_date:
+            filter_text.append(f"From: {start_date.strftime('%m/%d/%Y')}")
+        if end_date:
+            filter_text.append(f"To: {end_date.strftime('%m/%d/%Y')}")
 
         if filter_text:
             blocks.append({
@@ -938,6 +1017,62 @@ def handle_interactivity():
             )
             return "", 200
 
+        # Handle date picker actions for agent tickets
+        elif action_id in ["agent_start_date", "agent_end_date"]:
+            # Store the selected date in the view's private metadata
+            view_id = data.get("view", {}).get("id")
+            selected_date = action["selected_date"]
+
+            # We don't update the view here, just store the date for when the user clicks Apply
+            return "", 200
+
+        # Handle apply date filter action for agent tickets
+        elif action_id == "agent_apply_date_filter":
+            view_id = data.get("view", {}).get("id")
+
+            # Get existing view to extract date values
+            view_info = client.views_retrieve(view_id=view_id)
+            blocks = view_info["view"]["blocks"]
+
+            # Find the date filters block
+            date_block = next((b for b in blocks if b.get("block_id") == "agent_date_filters"), None)
+
+            # Get status filter value
+            filter_block = next((b for b in blocks if b.get("block_id") == "agent_ticket_filters"), None)
+            filter_status = None
+
+            # Extract dates from the datepickers
+            start_date = None
+            end_date = None
+
+            # Parse the dates
+            if date_block:
+                for element in date_block.get("elements", []):
+                    if element.get("action_id") == "agent_start_date" and "selected_date" in element:
+                        start_date_str = element["selected_date"]
+                        start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
+                        start_date = start_date.replace(hour=0, minute=0, second=0)
+
+                    if element.get("action_id") == "agent_end_date" and "selected_date" in element:
+                        end_date_str = element["selected_date"]
+                        end_date = datetime.strptime(end_date_str, "%Y-%m-%d")
+                        end_date = end_date.replace(hour=23, minute=59, second=59)
+
+            # Build updated blocks with date filters
+            updated_blocks = build_agent_tickets_modal(user_id, filter_status, start_date, end_date)
+
+            # Update the view
+            client.views_update(
+                view_id=view_id,
+                view={
+                    "type": "modal",
+                    "title": {"type": "plain_text", "text": "Your Tickets", "emoji": True},
+                    "close": {"type": "plain_text", "text": "Close", "emoji": True},
+                    "blocks": updated_blocks
+                }
+            )
+            return "", 200
+
         # Handle create new ticket action from agent tickets modal
         elif action_id == "create_new_ticket":
             modal = build_new_ticket_modal()
@@ -989,6 +1124,75 @@ def handle_interactivity():
                         "blocks": updated_blocks
                     }
                 )
+            return "", 200
+
+        # Handle date picker actions for system tickets
+        elif action_id in ["system_start_date", "system_end_date"]:
+            # Store the selected date in the view's private metadata
+            view_id = data.get("view", {}).get("id")
+            selected_date = action["selected_date"]
+
+            # We don't update the view here, just store the date for when the user clicks Apply
+            return "", 200
+
+        # Handle apply date filter action for system tickets
+        elif action_id == "system_apply_date_filter":
+            if not is_system_user(user_id):
+                return jsonify({"text": "❌ You do not have permission to filter tickets."}), 403
+
+            view_id = data.get("view", {}).get("id")
+
+            # Get existing view to extract filter values
+            view_info = client.views_retrieve(view_id=view_id)
+            blocks = view_info["view"]["blocks"]
+
+            # Find the filter actions block
+            filter_block = next((b for b in blocks if b.get("block_id") == "ticket_filters"), None)
+            date_block = next((b for b in blocks if b.get("block_id") == "system_date_filters"), None)
+
+            # Extract current filter values
+            filter_status = None
+            filter_priority = None
+            filter_campaign = None
+            start_date = None
+            end_date = None
+
+            # Get filter values if they exist
+            if filter_block:
+                for element in filter_block.get("elements", []):
+                    if element.get("action_id") == "filter_status" and "selected_option" in element:
+                        filter_status = element["selected_option"]["value"] if element["selected_option"]["value"] != "all" else None
+                    elif element.get("action_id") == "filter_priority" and "selected_option" in element:
+                        filter_priority = element["selected_option"]["value"] if element["selected_option"]["value"] != "all" else None
+                    elif element.get("action_id") == "filter_campaign" and "selected_option" in element:
+                        filter_campaign = element["selected_option"]["value"] if element["selected_option"]["value"] != "all" else None
+
+            # Parse the dates
+            if date_block:
+                for element in date_block.get("elements", []):
+                    if element.get("action_id") == "system_start_date" and "selected_date" in element:
+                        start_date_str = element["selected_date"]
+                        start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
+                        start_date = start_date.replace(hour=0, minute=0, second=0)
+
+                    if element.get("action_id") == "system_end_date" and "selected_date" in element:
+                        end_date_str = element["selected_date"]
+                        end_date = datetime.strptime(end_date_str, "%Y-%m-%d")
+                        end_date = end_date.replace(hour=23, minute=59, second=59)
+
+            # Build updated blocks with new filters
+            updated_blocks = build_system_tickets_modal(filter_status, filter_priority, filter_campaign, start_date, end_date)
+
+            # Update the view
+            client.views_update(
+                view_id=view_id,
+                view={
+                    "type": "modal",
+                    "title": {"type": "plain_text", "text": "System Tickets", "emoji": True},
+                    "close": {"type": "plain_text", "text": "Close", "emoji": True},
+                    "blocks": updated_blocks
+                }
+            )
             return "", 200
 
         # Handle export tickets action
