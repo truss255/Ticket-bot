@@ -14,12 +14,14 @@ import atexit
 import pytz
 import requests
 from dotenv import load_dotenv
+import time
 
 # Load environment variables from .env file
 load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)
+app.start_time = time.time()  # Track application start time
 
 # Configure logging to stdout for Railway
 logger = logging.getLogger(__name__)
@@ -330,7 +332,39 @@ def index():
             "/api/tickets/ticket-summary",
             "/api/tickets/slack/interactivity",
             "/api/tickets/slack/events"
-        ]
+        ],
+        "version": "1.1.0",
+        "last_updated": "2025-03-31"
+    })
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    # Check database connection
+    db_status = "ok"
+    try:
+        conn = db_pool.getconn()
+        cur = conn.cursor()
+        cur.execute("SELECT 1")
+        cur.fetchone()
+    except Exception as e:
+        db_status = f"error: {str(e)}"
+    finally:
+        if 'conn' in locals():
+            db_pool.putconn(conn)
+
+    # Check Slack connection
+    slack_status = "ok"
+    try:
+        client.auth_test()
+    except Exception as e:
+        slack_status = f"error: {str(e)}"
+
+    return jsonify({
+        "status": "ok",
+        "timestamp": datetime.now().isoformat(),
+        "uptime": time.time() - app.start_time if hasattr(app, 'start_time') else 0,
+        "database": db_status,
+        "slack": slack_status
     })
 
 def build_agent_tickets_modal(user_id, filter_status=None, start_date=None, end_date=None):
@@ -1378,7 +1412,31 @@ def handle_interactivity():
 def handle_slack_events():
     logger.info("Received Slack event")
     try:
-        data = json.loads(request.form.get('payload'))
+        # Check if this is a URL verification challenge
+        if request.json and request.json.get('type') == 'url_verification':
+            return jsonify({"challenge": request.json.get('challenge')})
+
+        # For event subscriptions, handle differently
+        if request.json and 'event' in request.json:
+            event = request.json.get('event', {})
+            event_type = event.get('type')
+            logger.info(f"Received Slack event type: {event_type}")
+
+            # Handle different event types here
+            if event_type == 'message':
+                # Process message events
+                logger.info(f"Message event in channel: {event.get('channel')}")
+
+            # Return a 200 OK for all events to acknowledge receipt
+            return jsonify({"status": "ok"})
+
+        # Handle payload from interactive components
+        payload = request.form.get('payload')
+        if not payload:
+            logger.warning("No payload found in request")
+            return jsonify({"status": "ok"}), 200  # Return 200 even for empty requests
+
+        data = json.loads(payload)
 
         # Handle ticket submission
         if data.get("type") == "view_submission" and data["view"]["callback_id"] == "new_ticket":
@@ -1592,6 +1650,9 @@ def handle_slack_events():
     except Exception as e:
         logger.error(f"Error handling Slack event: {e}")
         return jsonify({"text": "❌ An error occurred while processing the event."}), 500
+
+    # Default response if no conditions are met
+    return jsonify({"status": "success"}), 200
 
 # Scheduled Tasks (Optional)
 scheduler = BackgroundScheduler(timezone=pytz.timezone(TIMEZONE))
