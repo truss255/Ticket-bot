@@ -15,6 +15,10 @@ pip install -e .
 # Make sure the current directory is in the Python path
 echo "Setting up Python path..."
 export PYTHONPATH=$PYTHONPATH:$(pwd)
+echo "Current Python path: $PYTHONPATH"
+echo "Current directory: $(pwd)"
+echo "Listing files in current directory:"
+ls -la
 
 # Check for syntax errors in app.py
 echo "Checking for syntax errors in app.py..."

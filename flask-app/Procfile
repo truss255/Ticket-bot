@@ -1,2 +1,1 @@
-web: bash start.sh
-worker: PROCESS_TYPE=worker bash start.sh
+web: python app.py
