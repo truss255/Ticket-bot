@@ -1,0 +1,6 @@
+include *.py
+include *.md
+include requirements.txt
+include Procfile
+include runtime.txt
+include start.sh
