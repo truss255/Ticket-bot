@@ -1,19 +1,25 @@
 #!/bin/bash
 
 # Install dependencies
+echo "Installing dependencies..."
 pip install -r requirements.txt
 
-# Check if gunicorn is installed
-if ! command -v gunicorn &> /dev/null; then
-    echo "Gunicorn not found, installing..."
-    pip install gunicorn
-fi
+# Explicitly install gunicorn
+echo "Ensuring Gunicorn is installed..."
+pip install gunicorn==23.0.0
+
+# Set default port if not provided
+PORT=${PORT:-8080}
 
 # Start the application
-if [ "$RAILWAY_ENVIRONMENT" = "production" ]; then
-    echo "Starting in production mode with Gunicorn..."
-    gunicorn app:app --bind 0.0.0.0:$PORT
-else
-    echo "Starting in development mode..."
+echo "Starting application..."
+
+# Check if we should run in worker mode
+if [ "$PROCESS_TYPE" = "worker" ]; then
+    echo "Starting in worker mode..."
     python app.py
+else
+    echo "Starting in web mode with Gunicorn..."
+    # Use the full path to gunicorn
+    $(which gunicorn) app:app --bind 0.0.0.0:$PORT --log-level info
 fi
