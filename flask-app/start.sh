@@ -19,6 +19,10 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+# Make sure the current directory is in the Python path
+echo "Setting up Python path..."
+export PYTHONPATH=$PYTHONPATH:$(pwd)
+
 # Start the application
 echo "Starting application..."
 
