@@ -11,6 +11,14 @@ pip install gunicorn==23.0.0
 # Set default port if not provided
 PORT=${PORT:-8080}
 
+# Check for syntax errors in app.py
+echo "Checking for syntax errors in app.py..."
+python debug.py
+if [ $? -ne 0 ]; then
+    echo "Syntax error detected in app.py. Exiting."
+    exit 1
+fi
+
 # Start the application
 echo "Starting application..."
 
@@ -20,6 +28,6 @@ if [ "$PROCESS_TYPE" = "worker" ]; then
     python app.py
 else
     echo "Starting in web mode with Gunicorn..."
-    # Use the full path to gunicorn
-    $(which gunicorn) app:app --bind 0.0.0.0:$PORT --log-level info
+    # Use the full path to gunicorn with detailed error logging
+    $(which gunicorn) app:app --bind 0.0.0.0:$PORT --log-level debug --capture-output --error-logfile - --access-logfile -
 fi

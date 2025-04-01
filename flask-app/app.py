@@ -1301,7 +1301,7 @@ def handle_interactivity():
                                 "optional": True
                             }
                         ],
-                        "private_metadata": json.dumps({"ticket_id":                        "private_metadata": json.dumps({"ticket_id": ticket_id, "message_ts": message_ts})
+                        "private_metadata": json.dumps({"ticket_id": ticket_id, "message_ts": message_ts})
                     }
                     client.views_open(trigger_id=trigger_id, view=modal)
                     return "", 200
