@@ -65,13 +65,14 @@ try:
 except Exception as e:
     logger.error(f"Error initializing Slack client: {e}")
 
-# Set Slack channel ID
-SLACK_CHANNEL_ID = os.getenv("SLACK_CHANNEL_ID", "C08JTKR1RPT")
-logger.info(f"Using Slack channel ID: {SLACK_CHANNEL_ID}")
+# Set Slack channel ID or name
+SLACK_CHANNEL_ID = os.getenv("SLACK_CHANNEL_ID", "#systems-issues")
+logger.info(f"Using Slack channel: {SLACK_CHANNEL_ID}")
 
-# Validate channel ID format
-if not SLACK_CHANNEL_ID.startswith("C"):
-    logger.warning(f"SLACK_CHANNEL_ID '{SLACK_CHANNEL_ID}' may not be valid - should start with 'C'")
+# Add # prefix if it's a channel name and doesn't already have it
+if not SLACK_CHANNEL_ID.startswith("C") and not SLACK_CHANNEL_ID.startswith("#"):
+    SLACK_CHANNEL_ID = f"#{SLACK_CHANNEL_ID}"
+    logger.info(f"Updated channel name to: {SLACK_CHANNEL_ID}")
 
 # Verify channel access directly
 try:
@@ -1077,7 +1078,104 @@ def handle_interactivity():
             user_id = data.get('user', {}).get('id')
 
             if callback_id == 'new_ticket':
-                return jsonify({"response_action": "clear"})
+                try:
+                    # Extract form values
+                    state_values = data.get('view', {}).get('state', {}).get('values', {})
+                    logger.info(f"Form state values: {json.dumps(state_values)}")
+
+                    # Get form values
+                    campaign = state_values.get('campaign_block', {}).get('campaign_select', {}).get('selected_option', {}).get('value')
+                    issue_type = state_values.get('issue_type_block', {}).get('issue_type_select', {}).get('selected_option', {}).get('value')
+                    priority = state_values.get('priority_block', {}).get('priority_select', {}).get('selected_option', {}).get('value')
+                    details = state_values.get('details_block', {}).get('details_input', {}).get('value')
+                    salesforce_link = state_values.get('salesforce_link_block', {}).get('salesforce_link_input', {}).get('value', '')
+
+                    # Get file URL if uploaded
+                    file_url = "No file uploaded"
+                    if 'file_upload_block' in state_values and 'file_upload_input' in state_values['file_upload_block']:
+                        file_ids = state_values['file_upload_block']['file_upload_input'].get('files', [])
+                        if file_ids:
+                            file_id = file_ids[0]
+                            file_info = client.files_info(file=file_id)
+                            if file_info and file_info.get('ok'):
+                                file_url = file_info.get('file', {}).get('url_private', 'No file uploaded')
+
+                    # Insert ticket into database
+                    now = datetime.now(pytz.timezone(TIMEZONE))
+                    conn = db_pool.getconn()
+                    try:
+                        cur = conn.cursor()
+                        logger.info(f"Inserting ticket with values: user_id={user_id}, campaign={campaign}, issue_type={issue_type}, priority={priority}")
+                        cur.execute(
+                            "INSERT INTO tickets (created_by, campaign, issue_type, priority, status, assigned_to, details, salesforce_link, file_url, created_at, updated_at) "
+                            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING ticket_id",
+                            (user_id, campaign, issue_type, priority, "Open", "Unassigned", details, salesforce_link, file_url, now, now)
+                        )
+                        ticket_id = cur.fetchone()[0]
+                        conn.commit()
+                        logger.info(f"Ticket inserted successfully with ID: {ticket_id}")
+
+                        # Use the template to create the ticket submission message blocks
+                        logger.info(f"Creating ticket submission blocks using template for ticket ID: {ticket_id}")
+                        message_blocks = get_ticket_submission_blocks(
+                            ticket_id=ticket_id,
+                            campaign=campaign,
+                            issue_type=issue_type,
+                            priority=priority,
+                            user_id=user_id,
+                            details=details,
+                            salesforce_link=salesforce_link,
+                            file_url=file_url
+                        )
+
+                        # Post ticket to main channel
+                        logger.info(f"Posting ticket to channel: {SLACK_CHANNEL_ID}")
+                        try:
+                            text_fallback = f"New Ticket T{ticket_id:03d} - {issue_type} - {priority} Priority - Submitted by <@{user_id}>"
+                            response = client.chat_postMessage(
+                                channel=SLACK_CHANNEL_ID,
+                                blocks=message_blocks,
+                                text=text_fallback  # This is shown if blocks can't be displayed
+                            )
+                            logger.info(f"Message posted successfully: {response.get('ts')}")
+
+                            # Send confirmation to the user
+                            confirmation_blocks = get_agent_confirmation_blocks(
+                                ticket_id=ticket_id,
+                                campaign=campaign,
+                                issue_type=issue_type,
+                                priority=priority
+                            )
+
+                            # Send a direct message to the user
+                            dm_response = client.chat_postMessage(
+                                channel=user_id,  # Sending DM to user
+                                text=f":white_check_mark: Your ticket T{ticket_id:03d} has been submitted successfully!",
+                                blocks=confirmation_blocks
+                            )
+                            logger.info(f"Confirmation sent to user: {dm_response.get('ts')}")
+                        except Exception as post_err:
+                            logger.error(f"Error posting message: {post_err}")
+                            # Try a simpler approach
+                            try:
+                                simple_text = f"New ticket submitted: T{ticket_id:03d} - {issue_type} - {priority} Priority"
+                                client.chat_postMessage(channel=SLACK_CHANNEL_ID, text=simple_text)
+                                logger.info("Posted simple text message as fallback")
+                            except Exception as simple_err:
+                                logger.error(f"Error posting simple message: {simple_err}")
+                    except Exception as db_err:
+                        logger.error(f"Database error: {db_err}")
+                        conn.rollback()
+                        raise
+                    finally:
+                        db_pool.putconn(conn)
+
+                    # Return success response
+                    logger.info("Ticket submission completed successfully")
+                    return jsonify({"response_action": "clear"})
+                except Exception as e:
+                    logger.error(f"Error processing ticket submission: {e}")
+                    return jsonify({"response_action": "clear"})
             elif callback_id == 'assign_to_me_action':
                 metadata = json.loads(data["view"]["private_metadata"])
                 ticket_id = metadata["ticket_id"]
