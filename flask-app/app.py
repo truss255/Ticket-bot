@@ -21,12 +21,17 @@ try:
     from ticket_templates import (
         get_ticket_submission_blocks,
         get_agent_confirmation_blocks,
-        get_ticket_updated_blocks,
         build_export_filter_modal
     )
-    print("Successfully imported ticket_templates module")
+    from new_modal import build_new_ticket_modal
+    from system_ticket_message import (
+        get_system_ticket_blocks,
+        get_ticket_updated_blocks,
+        get_ticket_detail_blocks
+    )
+    print("Successfully imported all template modules")
 except ImportError:
-    print("Could not import ticket_templates module, defining functions inline")
+    print("Could not import template modules, defining functions inline")
 
     # Define the functions inline if the module can't be found
     def get_ticket_submission_blocks(ticket_id, campaign, issue_type, priority, user_id, details, salesforce_link, file_url):
@@ -812,8 +817,8 @@ def handle_interactivity():
                 finally:
                     db_pool.putconn(conn)
 
-                # Build and post ticket notification using your template
-                message_blocks = get_ticket_submission_blocks(
+                # Build and post ticket notification using the system ticket message template
+                message_blocks = get_system_ticket_blocks(
                     ticket_id=ticket_id,
                     campaign=campaign,
                     issue_type=issue_type,
