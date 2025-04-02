@@ -228,7 +228,32 @@ def slack_events():
 
 @app.route('/api/tickets/new-ticket', methods=['POST'])
 def new_ticket():
-    return new_ticket_command(request, client, db_pool)
+    """Handle the /new-ticket slash command from Slack."""
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info("Received /api/tickets/new-ticket request")
+    try:
+        logger.info(f"Request form data: {request.form}")
+        logger.info(f"Request headers: {request.headers}")
+
+        trigger_id = request.form.get('trigger_id')
+        logger.info(f"Trigger ID: {trigger_id}")
+        if not trigger_id:
+            logger.error("No trigger_id found in the request")
+            return jsonify({"text": "Error: Could not process your request. Please try again."}), 200
+
+        token_preview = SLACK_BOT_TOKEN[:10] + "..." if SLACK_BOT_TOKEN else "None"
+        logger.info(f"Using Slack token: {token_preview}")
+
+        modal = build_new_ticket_modal()
+        logger.info("Built new ticket modal")
+
+        response = client.views_open(trigger_id=trigger_id, view=modal)
+        logger.info(f"Slack API response: {response}")
+        return "", 200
+    except Exception as e:
+        logger.error(f"Error in /api/tickets/new-ticket: {e}")
+        return jsonify({"text": "❌ An error occurred. Please try again later."}), 200
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -265,7 +290,178 @@ def handle_events():
 
 @app.route('/api/tickets/slack/interactivity', methods=['POST'])
 def interactivity():
-    return handle_interactivity(request, client, db_pool)
+    """Handle interactive components from Slack."""
+    import logging
+    import json
+    import time
+    from datetime import datetime
+    import pytz
+
+    logger = logging.getLogger(__name__)
+    logger.info("Received /api/tickets/slack/interactivity request")
+    payload = request.form.get('payload')
+    if not payload:
+        logger.error("No payload provided")
+        return jsonify({"error": "No payload provided"}), 400
+    try:
+        data = json.loads(payload)
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON decode error: {e}")
+        return jsonify({"error": "Invalid JSON payload"}), 400
+
+    # Handle modal submissions (view_submission)
+    if data.get("type") == "view_submission":
+        callback_id = data.get("view", {}).get("callback_id")
+        user_id = data.get("user", {}).get("id")
+        if callback_id == "new_ticket":
+            try:
+                state = data["view"]["state"]["values"]
+                campaign = state["campaign_block"]["campaign_select"]["selected_option"]["value"]
+                issue_type = state["issue_type_block"]["issue_type_select"]["selected_option"]["value"]
+                priority = state["priority_block"]["priority_select"]["selected_option"]["value"]
+                details = state["details_block"]["details_input"]["value"]
+                salesforce_link = state.get("salesforce_link_block", {}).get("salesforce_link_input", {}).get("value", "")
+
+                # Handle file uploads
+                file_url = "No file uploaded"
+                if "file_upload_block" in state and "file_upload_action" in state["file_upload_block"]:
+                    file_ids = state["file_upload_block"]["file_upload_action"].get("files", [])
+                    if file_ids:
+                        file_id = file_ids[0]
+                        file_info = client.files_info(file=file_id)
+                        if file_info.get("ok"):
+                            file_url = file_info.get("file", {}).get("url_private", "No file uploaded")
+
+                now = datetime.now(pytz.timezone(TIMEZONE))
+                conn = db_pool.getconn()
+                try:
+                    cur = conn.cursor()
+                    cur.execute(
+                        "INSERT INTO tickets (created_by, campaign, issue_type, priority, status, assigned_to, details, salesforce_link, file_url, created_at, updated_at) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING ticket_id",
+                        (user_id, campaign, issue_type, priority, "Open", "Unassigned", details, salesforce_link, file_url, now, now)
+                    )
+                    ticket_id = cur.fetchone()[0]
+                    conn.commit()
+                    logger.info(f"Ticket inserted with ID: {ticket_id}")
+                finally:
+                    db_pool.putconn(conn)
+
+                # Build and post ticket notification using the system ticket message template
+                message_blocks = get_system_ticket_blocks(
+                    ticket_id=ticket_id,
+                    campaign=campaign,
+                    issue_type=issue_type,
+                    priority=priority,
+                    user_id=user_id,
+                    details=details,
+                    salesforce_link=salesforce_link,
+                    file_url=file_url
+                )
+                text_fallback = f"New Ticket T{ticket_id:03d} - {issue_type} - {priority} Priority - Submitted by <@{user_id}>"
+                try:
+                    channel_response = client.chat_postMessage(
+                        channel=SYSTEM_ISSUES_CHANNEL,
+                        blocks=message_blocks,
+                        text=text_fallback
+                    )
+                    logger.info(f"Ticket message posted to channel: {channel_response.get('ts')}")
+                except Exception as post_err:
+                    logger.error(f"Error posting ticket message: {post_err}")
+
+                # Send DM confirmation to submitting user
+                confirmation_blocks = build_ticket_confirmation_modal(
+                    ticket_id=ticket_id,
+                    campaign=campaign,
+                    issue_type=issue_type,
+                    priority=priority
+                )["blocks"]
+                send_dm(user_id, f":white_check_mark: Your ticket T{ticket_id:03d} has been submitted successfully!", confirmation_blocks)
+
+                # Return a success view instead of clearing
+                success_view = {
+                    "type": "modal",
+                    "title": {"type": "plain_text", "text": "Success", "emoji": True},
+                    "close": {"type": "plain_text", "text": "Close", "emoji": True},
+                    "blocks": [
+                        {
+                            "type": "section",
+                            "text": {"type": "mrkdwn", "text": f":white_check_mark: *Ticket T{ticket_id:03d} has been submitted successfully!*"}
+                        },
+                        {
+                            "type": "section",
+                            "text": {"type": "mrkdwn", "text": "Your ticket has been posted in the #systems-issues channel."}
+                        },
+                        {
+                            "type": "section",
+                            "text": {"type": "mrkdwn", "text": "You'll also receive a direct message with your ticket details."}
+                        }
+                    ]
+                }
+                return jsonify({"response_action": "update", "view": success_view})
+            except Exception as e:
+                logger.error(f"Error processing new ticket submission: {e}")
+                return jsonify({"response_action": "clear"})
+
+        return jsonify({"response_action": "clear"})
+
+    # Handle block actions (button clicks)
+    elif data.get("type") == "block_actions":
+        actions = data.get("actions", [])
+        if not actions:
+            logger.error("No actions found in block_actions payload")
+            return jsonify({"error": "No actions found"}), 400
+        action = actions[0]
+        action_id = action.get("action_id")
+        user_id = data.get("user", {}).get("id")
+        trigger_id = data.get("trigger_id")
+
+        # Handle the image upload button click
+        if action_id == "open_file_upload":
+            try:
+                # Get the user ID from the payload
+                user_id = data.get("user", {}).get("id")
+                view_id = data.get("view", {}).get("id")
+
+                # Store the view_id in a global dictionary to track which modal the file is for
+                if not hasattr(app, 'file_upload_tracking'):
+                    app.file_upload_tracking = {}
+
+                app.file_upload_tracking[user_id] = {
+                    'view_id': view_id,
+                    'timestamp': time.time()
+                }
+
+                logger.info(f"Stored view_id {view_id} for user {user_id} file upload")
+
+                # Send a DM prompting the user to upload a file with clear instructions
+                client.chat_postMessage(
+                    channel=user_id,
+                    blocks=[
+                        {
+                            "type": "section",
+                            "text": {"type": "mrkdwn", "text": "📷 *Upload your screenshot or image here*"}
+                        },
+                        {
+                            "type": "section",
+                            "text": {"type": "mrkdwn", "text": "1. Click the + button below to upload your file\n2. After uploading, you'll receive a link\n3. Copy that link and paste it in the ticket form"}
+                        },
+                        {
+                            "type": "context",
+                            "elements": [
+                                {"type": "mrkdwn", "text": "_This window will stay open while you complete your ticket._"}
+                            ]
+                        }
+                    ]
+                )
+                logger.info(f"Sent file upload prompt to user {user_id}")
+            except Exception as e:
+                logger.error(f"Error handling file upload request: {e}")
+            return "", 200
+
+        return "", 200
+
+    return jsonify({"status": "ok"}), 200
 
 @app.route('/api/tickets/system-tickets', methods=['POST'])
 def system_tickets():
