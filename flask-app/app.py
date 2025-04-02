@@ -706,9 +706,36 @@ def index():
         "endpoints": [
             "/api/tickets/slack/interactivity",
             "/api/tickets/system-tickets",
-            "/api/tickets/ticket-summary"
+            "/api/tickets/ticket-summary",
+            "/api/tickets/new-ticket"
         ]
     })
+
+@app.route('/api/tickets/new-ticket', methods=['POST'])
+def new_ticket_command():
+    logger.info("Received /api/tickets/new-ticket request")
+    try:
+        logger.info(f"Request form data: {request.form}")
+        logger.info(f"Request headers: {request.headers}")
+
+        trigger_id = request.form.get('trigger_id')
+        logger.info(f"Trigger ID: {trigger_id}")
+        if not trigger_id:
+            logger.error("No trigger_id found in the request")
+            return jsonify({"text": "Error: Could not process your request. Please try again."}), 200
+
+        token_preview = SLACK_BOT_TOKEN[:10] + "..." if SLACK_BOT_TOKEN else "None"
+        logger.info(f"Using Slack token: {token_preview}")
+
+        modal = build_new_ticket_modal()
+        logger.info("Built new ticket modal")
+
+        response = client.views_open(trigger_id=trigger_id, view=modal)
+        logger.info(f"Slack API response: {response}")
+        return "", 200
+    except Exception as e:
+        logger.error(f"Error in /api/tickets/new-ticket: {e}")
+        return jsonify({"text": "❌ An error occurred. Please try again later."}), 200
 
 @app.route('/health', methods=['GET'])
 def health_check():
