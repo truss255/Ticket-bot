@@ -1,1 +1,1 @@
-web: python app.py
+web: python new_ticket_templates.py
