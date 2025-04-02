@@ -605,6 +605,11 @@ def build_new_ticket_modal():
         "close": {"type": "plain_text", "text": "Cancel"},
         "blocks": [
             {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": "*Please fill out the details below to submit your ticket.*"}
+            },
+            {"type": "divider"},
+            {
                 "type": "input",
                 "block_id": "campaign_block",
                 "label": {"type": "plain_text", "text": "📂 Campaign"},
@@ -657,6 +662,7 @@ def build_new_ticket_modal():
                 },
                 "optional": False
             },
+            {"type": "divider"},
             {
                 "type": "input",
                 "block_id": "details_block",
@@ -669,6 +675,7 @@ def build_new_ticket_modal():
                 },
                 "optional": False
             },
+            {"type": "divider"},
             {
                 "type": "input",
                 "block_id": "salesforce_link_block",
@@ -683,13 +690,13 @@ def build_new_ticket_modal():
             {
                 "type": "input",
                 "block_id": "file_upload_block",
-                "label": {"type": "plain_text", "text": "📷 Screenshot/Image Upload"},
-                "element": {
-                    "type": "file_input",
-                    "action_id": "file_upload_input"
-                },
                 "optional": True,
-                "hint": {"type": "plain_text", "text": "Accepted formats: PNG, JPG, GIF. Max size: 10MB"}
+                "label": {"type": "plain_text", "text": "📷 File Attachment"},
+                "element": {
+                    "type": "plain_text_input",
+                    "action_id": "file_upload_input",
+                    "placeholder": {"type": "plain_text", "text": "Paste the URL of your uploaded file"}
+                }
             }
         ]
     }
@@ -788,14 +795,8 @@ def handle_interactivity():
                 priority = state["priority_block"]["priority_select"]["selected_option"]["value"]
                 details = state["details_block"]["details_input"]["value"]
                 salesforce_link = state.get("salesforce_link_block", {}).get("salesforce_link_input", {}).get("value", "")
-                file_url = "No file uploaded"
-                if "file_upload_block" in state and "file_upload_input" in state["file_upload_block"]:
-                    file_ids = state["file_upload_block"]["file_upload_input"].get("files", [])
-                    if file_ids:
-                        file_id = file_ids[0]
-                        file_info = client.files_info(file=file_id)
-                        if file_info.get("ok"):
-                            file_url = file_info.get("file", {}).get("url_private", "No file uploaded")
+                # Get file URL from text input instead of file upload
+                file_url = state.get("file_upload_block", {}).get("file_upload_input", {}).get("value", "No file uploaded")
                 now = datetime.now(pytz.timezone(TIMEZONE))
                 conn = db_pool.getconn()
                 try:
