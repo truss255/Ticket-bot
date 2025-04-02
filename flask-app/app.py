@@ -3,10 +3,18 @@ import time
 import atexit
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
+
+# Attempt to import the config module, fallback to environment variables if missing
 try:
     from config import SLACK_BOT_TOKEN, DATABASE_URL, TIMEZONE, SYSTEM_ISSUES_CHANNEL
 except ModuleNotFoundError:
-    raise ImportError("The 'config' module is missing. Ensure it is in the correct directory.")
+    SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
+    DATABASE_URL = os.getenv("DATABASE_URL")
+    TIMEZONE = os.getenv("TIMEZONE", "UTC")
+    SYSTEM_ISSUES_CHANNEL = os.getenv("SYSTEM_ISSUES_CHANNEL")
+    if not SLACK_BOT_TOKEN or not DATABASE_URL:
+        raise ImportError("The 'config' module is missing, and required environment variables are not set.")
+
 from database import db_pool, init_db
 from slack_client import client
 from ticket_submission import build_new_ticket_modal, build_ticket_confirmation_modal
