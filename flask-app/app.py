@@ -3,10 +3,13 @@ import time
 import atexit
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
-from config import SLACK_BOT_TOKEN, DATABASE_URL, TIMEZONE, SYSTEM_ISSUES_CHANNEL
+try:
+    from config import SLACK_BOT_TOKEN, DATABASE_URL, TIMEZONE, SYSTEM_ISSUES_CHANNEL
+except ModuleNotFoundError:
+    raise ImportError("The 'config' module is missing. Ensure it is in the correct directory.")
 from database import db_pool, init_db
 from slack_client import client
-from new_ticket import new_ticket_command
+from ticket_submission import build_new_ticket_modal, build_ticket_confirmation_modal
 from ticket_actions import handle_interactivity
 from utils import send_dm, is_authorized_user, export_tickets
 from scheduler import scheduler
