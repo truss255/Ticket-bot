@@ -24,7 +24,7 @@ try:
         get_agent_confirmation_blocks,
         build_export_filter_modal
     )
-    from new_modal import build_new_ticket_modal
+    from ticket_submission import build_new_ticket_modal, build_ticket_confirmation_modal
     from system_ticket_message import (
         get_system_ticket_blocks,
         get_ticket_updated_blocks,
