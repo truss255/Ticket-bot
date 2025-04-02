@@ -6,13 +6,13 @@ client = WebClient(token=SLACK_BOT_TOKEN)
 
 def send_dm(user_id, text, blocks=None):
     try:
-        dm_response = client.conversations_open(users=user_id)
-        channel_id = dm_response["channel"]["id"]
+        # Send directly to the user ID (no need to open a conversation first)
         message_response = client.chat_postMessage(
-            channel=channel_id,
+            channel=user_id,
             text=text,
             blocks=blocks
         )
         return message_response
     except SlackApiError as e:
-        raise
+        print(f"Error sending DM: {e}")
+        return None

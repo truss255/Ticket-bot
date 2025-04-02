@@ -16,9 +16,8 @@ except ModuleNotFoundError:
         raise ImportError("The 'config' module is missing, and required environment variables are not set.")
 
 from database import db_pool, init_db
-from flask_app.slack_client import client
-from ticket_submission import build_new_ticket_modal, build_ticket_confirmation_modal
-from ticket_actions import handle_interactivity
+from slack_client import client
+from new_modal import build_new_ticket_modal, build_ticket_confirmation_modal
 from utils import send_dm, is_authorized_user, export_tickets
 from scheduler import scheduler
 

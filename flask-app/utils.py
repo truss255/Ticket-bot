@@ -7,8 +7,12 @@ from slack_client import client
 from config import TIMEZONE, SYSTEM_ISSUES_CHANNEL
 
 def send_dm(user_id, text, blocks=None):
-    from slack_client import send_dm as slack_send_dm
-    return slack_send_dm(user_id, text, blocks)
+    try:
+        client.chat_postMessage(channel=user_id, text=text, blocks=blocks)
+        return True
+    except Exception as e:
+        print(f"Error sending DM: {e}")
+        return False
 
 def is_authorized_user(user_id):
     try:
