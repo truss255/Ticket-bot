@@ -1,4 +1,64 @@
-Q1Q11Q
+"""
+This module contains functions for building modal dialogs for the ticket system.
+"""
+
+def build_new_ticket_modal():
+    """
+    Construct the modal for submitting a new ticket with an optional file attachment and enhanced layout.
+    """
+    return {
+        "type": "modal",
+        "callback_id": "new_ticket",
+        "title": {"type": "plain_text", "text": "Submit a New Ticket"},
+        "submit": {"type": "plain_text", "text": "Submit"},
+        "close": {"type": "plain_text", "text": "Cancel"},
+        "blocks": [
+            # Introduction text
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": "*Fill out details and upload an image (optional).*"}
+            },
+            {"type": "divider"},
+            # Campaign selection
+            {
+                "type": "input",
+                "block_id": "campaign_block",
+                "label": {"type": "plain_text", "text": "📂 Campaign"},
+                "element": {
+                    "type": "static_select",
+                    "action_id": "campaign_select",
+                    "placeholder": {"type": "plain_text", "text": "Select a campaign"},
+                    "options": [
+                        {"text": {"type": "plain_text", "text": "Camp Lejeune"}, "value": "Camp Lejeune"},
+                        {"text": {"type": "plain_text", "text": "Maui Wildfires"}, "value": "Maui Wildfires"},
+                        {"text": {"type": "plain_text", "text": "LA Wildfire"}, "value": "LA Wildfire"},
+                        {"text": {"type": "plain_text", "text": "Depo-Provera"}, "value": "Depo-Provera"},
+                        {"text": {"type": "plain_text", "text": "CPP Sick and Family Leave"}, "value": "CPP Sick and Family Leave"}
+                    ]
+                },
+                "optional": False
+            },
+            # Issue type selection
+            {
+                "type": "input",
+                "block_id": "issue_type_block",
+                "label": {"type": "plain_text", "text": "📌 Issue Type"},
+                "element": {
+                    "type": "static_select",
+                    "action_id": "issue_type_select",
+                    "placeholder": {"type": "plain_text", "text": "Select an issue type"},
+                    "options": [
+                        {"text": {"type": "plain_text", "text": "Salesforce Issues (Freeze/Crash)"}, "value": "Salesforce Performance Issues"},
+                        {"text": {"type": "plain_text", "text": "Vonage Dialer Issues"}, "value": "Vonage Dialer Functionality Issues"},
+                        {"text": {"type": "plain_text", "text": "Broken Links"}, "value": "Broken or Unresponsive Links"},
+                        {"text": {"type": "plain_text", "text": "Laptop Won't Power On"}, "value": "Laptop Fails to Power On"},
+                        {"text": {"type": "plain_text", "text": "Slow/Freezing Laptop"}, "value": "Slow Performance or Freezing Laptop"},
+                        {"text": {"type": "plain_text", "text": "Other"}, "value": "Other"}
+                    ]
+                },
+                "optional": False
+            },
+            # Priority selection
             {
                 "type": "input",
                 "block_id": "priority_block",
@@ -25,7 +85,7 @@ Q1Q11Q
                     "type": "plain_text_input",
                     "action_id": "details_input",
                     "multiline": True,
-                    "placeholder": {"type": "plain_text", "text": "Describe the issue in detail"}
+                    "placeholder": {"type": "plain_text", "text": "Describe the issue clearly"}
                 },
                 "optional": False
             },
@@ -38,7 +98,7 @@ Q1Q11Q
                 "element": {
                     "type": "plain_text_input",
                     "action_id": "salesforce_link_input",
-                    "placeholder": {"type": "plain_text", "text": "Paste Salesforce URL (if applicable)"}
+                    "placeholder": {"type": "plain_text", "text": "Paste Salesforce URL if applicable"}
                 },
                 "optional": True
             },
