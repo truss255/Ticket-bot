@@ -33,6 +33,75 @@ try:
 except ImportError:
     print("Could not import template modules, defining functions inline")
 
+    # Define fallback function for get_system_ticket_blocks
+    def get_system_ticket_blocks(ticket_id, campaign, issue_type, priority, user_id, details, salesforce_link, file_url):
+        """Returns the blocks for a ticket message in the #systems-issues channel."""
+        # Create the main message blocks
+        blocks = [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"🎟 *New Ticket Created!* (T{ticket_id:03d})"
+                }
+            },
+            {"type": "divider"},
+            {
+                "type": "section",
+                "fields": [
+                    {"type": "mrkdwn", "text": f"📂 *Campaign:* {campaign}"},
+                    {"type": "mrkdwn", "text": f"📌 *Issue:* {issue_type}"}
+                ]
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {"type": "mrkdwn", "text": f"⚡ *Priority:* {'🔴 High' if priority == 'High' else '🟡 Medium' if priority == 'Medium' else '🔵 Low'}"},
+                    {"type": "mrkdwn", "text": f"👤 *Assigned To:* ❌ Unassigned"}
+                ]
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {"type": "mrkdwn", "text": f"🔄 *Status:* 🟢 Open"},
+                    {"type": "mrkdwn", "text": f"👤 *Submitted By:* <@{user_id}>"}
+                ]
+            },
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"✏️ *Details:* {details}"}
+            }
+        ]
+
+        # Add Salesforce link if available
+        if salesforce_link and salesforce_link != "N/A":
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"🔗 *Salesforce Link:* <{salesforce_link}|Click Here>"}
+            })
+
+        # Add file attachment if available
+        if file_url and file_url != "No file uploaded":
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"📷 *File Attachment:* <{file_url}|View Screenshot>"}
+            })
+
+        # Add divider before actions
+        blocks.append({"type": "divider"})
+
+        # Add Assign to Me button
+        blocks.append({
+            "type": "actions",
+            "block_id": f"ticket_actions_{ticket_id}",
+            "elements": [
+                {"type": "button", "text": {"type": "plain_text", "text": "🔘 Assign to Me", "emoji": True},
+                 "action_id": f"assign_to_me_{ticket_id}", "value": str(ticket_id), "style": "primary"}
+            ]
+        })
+
+        return blocks
+
     # Define the functions inline if the module can't be found
     def get_ticket_submission_blocks(ticket_id, campaign, issue_type, priority, user_id, details, salesforce_link, file_url):
         """Returns the blocks for a ticket submission message in the #systems-issues channel"""
@@ -999,6 +1068,22 @@ def handle_interactivity():
                 client.views_open(trigger_id=trigger_id, view=modal)
             except Exception as modal_err:
                 logger.error(f"Error opening export modal: {modal_err}")
+            return "", 200
+
+        # Handle the image upload button click
+        elif action_id == "open_file_upload":
+            try:
+                # Get the user ID from the payload
+                user_id = data.get("user", {}).get("id")
+
+                # Send a DM prompting the user to upload a file
+                client.chat_postMessage(
+                    channel=user_id,
+                    text="📷 Please upload your image directly here. It will be attached to your ticket automatically."
+                )
+                logger.info(f"Sent file upload prompt to user {user_id}")
+            except Exception as e:
+                logger.error(f"Error handling file upload request: {e}")
             return "", 200
 
         return "", 200

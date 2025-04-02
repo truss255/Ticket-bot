@@ -192,23 +192,23 @@ def build_new_ticket_modal():
                 "type": "input",
                 "block_id": "file_upload_block",
                 "optional": True,
-                "label": {"type": "plain_text", "text": "📷 File Attachment"},
+                "label": {"type": "plain_text", "text": "📷 Screenshot/Image URL"},
                 "element": {
                     "type": "plain_text_input",
                     "action_id": "file_upload_input",
-                    "placeholder": {"type": "plain_text", "text": "Paste the URL of your uploaded file"}
+                    "placeholder": {"type": "plain_text", "text": "Automatically filled after upload (optional)"}
                 }
             },
             {"type": "divider"},
-            # Upload File button to trigger custom upload flow
+            # Upload Image Button
             {
                 "type": "actions",
                 "block_id": "upload_actions",
                 "elements": [
                     {
                         "type": "button",
-                        "text": {"type": "plain_text", "text": "Upload File", "emoji": True},
-                        "action_id": "upload_file"
+                        "text": {"type": "plain_text", "text": "🖼️ Upload Image", "emoji": True},
+                        "action_id": "open_file_upload"
                     }
                 ]
             }
@@ -223,7 +223,7 @@ def build_ticket_confirmation_modal(ticket_id, campaign, issue_type, priority):
     """
     # Determine the appropriate priority icon.
     priority_icon = '🔴 High' if priority == 'High' else '🟡 Medium' if priority == 'Medium' else '🔵 Low'
-    
+
     return {
         "type": "modal",
         "callback_id": "ticket_confirmation",
