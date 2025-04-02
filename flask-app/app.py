@@ -860,6 +860,65 @@ def health_check():
         "slack": slack_status
     })
 
+@app.route('/api/tickets/slack/events', methods=['POST'])
+def handle_events():
+    """Handle Slack events, including file uploads in DMs."""
+    data = request.json
+    logger.info(f"Received Slack event: {data.get('type')}")
+
+    # Verify the request is from Slack
+    if data.get("type") == "url_verification":
+        return jsonify({"challenge": data.get("challenge")})
+
+    # Handle file_shared events
+    event = data.get("event", {})
+    if event.get("type") == "file_shared" or event.get("type") == "file_created":
+        try:
+            file_id = event.get("file_id")
+            user_id = event.get("user_id")
+
+            # Get file info
+            file_info = client.files_info(file=file_id)
+            if file_info and file_info.get("ok"):
+                file_url = file_info.get("file", {}).get("url_private", "")
+                file_name = file_info.get("file", {}).get("name", "")
+
+                # Check if this user has an active file upload tracking
+                if hasattr(app, 'file_upload_tracking') and user_id in app.file_upload_tracking:
+                    # Send a message with the file URL in a more user-friendly format
+                    client.chat_postMessage(
+                        channel=user_id,
+                        blocks=[
+                            {
+                                "type": "section",
+                                "text": {"type": "mrkdwn", "text": "✅ *Your file has been uploaded successfully!*"}
+                            },
+                            {
+                                "type": "section",
+                                "text": {"type": "mrkdwn", "text": "Here's the URL to paste in the ticket form:"}
+                            },
+                            {
+                                "type": "section",
+                                "text": {"type": "mrkdwn", "text": f"`{file_url}`"}
+                            },
+                            {
+                                "type": "context",
+                                "elements": [
+                                    {"type": "mrkdwn", "text": "_Click the URL above to select it, then copy (Ctrl+C) and paste it into the ticket form._"}
+                                ]
+                            }
+                        ]
+                    )
+                    logger.info(f"Sent file URL to user {user_id}: {file_url}")
+                else:
+                    logger.info(f"Received file from user {user_id} but no active ticket form found")
+            else:
+                logger.error(f"Could not get file info for file_id {file_id}")
+        except Exception as e:
+            logger.error(f"Error handling file_shared event: {e}")
+
+    return jsonify({"status": "ok"})
+
 @app.route('/api/tickets/slack/interactivity', methods=['POST'])
 def handle_interactivity():
     logger.info("Received /api/tickets/slack/interactivity request")
@@ -1091,11 +1150,38 @@ def handle_interactivity():
             try:
                 # Get the user ID from the payload
                 user_id = data.get("user", {}).get("id")
+                view_id = data.get("view", {}).get("id")
 
-                # Send a DM prompting the user to upload a file
+                # Store the view_id in a global dictionary to track which modal the file is for
+                if not hasattr(app, 'file_upload_tracking'):
+                    app.file_upload_tracking = {}
+
+                app.file_upload_tracking[user_id] = {
+                    'view_id': view_id,
+                    'timestamp': time.time()
+                }
+
+                logger.info(f"Stored view_id {view_id} for user {user_id} file upload")
+
+                # Send a DM prompting the user to upload a file with clear instructions
                 client.chat_postMessage(
                     channel=user_id,
-                    text="📷 Please upload your image directly here. It will be attached to your ticket automatically."
+                    blocks=[
+                        {
+                            "type": "section",
+                            "text": {"type": "mrkdwn", "text": "📷 *Upload your screenshot or image here*"}
+                        },
+                        {
+                            "type": "section",
+                            "text": {"type": "mrkdwn", "text": "1. Click the + button below to upload your file\n2. After uploading, you'll receive a link\n3. Copy that link and paste it in the ticket form"}
+                        },
+                        {
+                            "type": "context",
+                            "elements": [
+                                {"type": "mrkdwn", "text": "_This window will stay open while you complete your ticket._"}
+                            ]
+                        }
+                    ]
                 )
                 logger.info(f"Sent file upload prompt to user {user_id}")
             except Exception as e:
