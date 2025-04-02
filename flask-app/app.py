@@ -411,6 +411,7 @@ logger.info("Logging configured.")
 
 # Environment variables & constants
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
+SLACK_SIGNING_SECRET = os.getenv("SLACK_SIGNING_SECRET")
 DATABASE_URL = os.getenv("DATABASE_URL")
 TIMEZONE = os.getenv("TIMEZONE", "America/New_York")
 # All notifications will be posted to the system issues channel
@@ -674,9 +675,9 @@ def build_new_ticket_modal():
     """Construct the modal for submitting a new ticket."""
     return {
         "type": "modal",
-        "callback_id": "new_ticket",
+        "callback_id": "ticket_submission",
         "title": {"type": "plain_text", "text": "Submit a New Ticket"},
-        "submit": {"type": "plain_text", "text": "Submit"},
+        "submit": {"type": "plain_text", "text": "Submit ✅"},
         "close": {"type": "plain_text", "text": "Cancel"},
         "blocks": [
             {
@@ -765,13 +766,12 @@ def build_new_ticket_modal():
             {
                 "type": "input",
                 "block_id": "file_upload_block",
-                "optional": True,
-                "label": {"type": "plain_text", "text": "📷 File Attachment"},
+                "label": {"type": "plain_text", "text": "🖼️ Attach Screenshot (optional)"},
                 "element": {
-                    "type": "plain_text_input",
-                    "action_id": "file_upload_input",
-                    "placeholder": {"type": "plain_text", "text": "Paste the URL of your uploaded file"}
-                }
+                    "type": "file_input",
+                    "action_id": "file_upload_action"
+                },
+                "optional": True
             }
         ]
     }
@@ -807,6 +807,36 @@ def upload_file():
         file.save(file_path)
         file_url = url_for('static', filename=f'uploads/{filename}', _external=True)
         return jsonify({"file_url": file_url}), 200
+
+@app.route('/slack/events', methods=['POST'])
+def slack_events():
+    payload = request.json
+    if payload.get("type") == "view_submission" and payload["view"]["callback_id"] == "ticket_submission":
+        # Extract file metadata from the submission
+        file_id = payload["view"]["state"]["values"]["file_upload_block"]["file_upload_action"]["selected_file"]
+        
+        # Step 1: Get upload URL
+        upload_url_response = requests.post(
+            "https://slack.com/api/files.getUploadURLExternal",
+            headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}"},
+            json={"file_id": file_id}
+        )
+        upload_url = upload_url_response.json().get("upload_url")
+
+        # Step 2: Complete the upload
+        complete_upload_response = requests.post(
+            "https://slack.com/api/files.completeUploadExternal",
+            headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}"},
+            json={"upload_url": upload_url}
+        )
+
+        # Log or store the file metadata
+        file_metadata = complete_upload_response.json()
+        print("File uploaded:", file_metadata)
+
+        return jsonify({"response_action": "clear"})
+
+    return jsonify({"ok": True})
 
 @app.route('/api/tickets/new-ticket', methods=['POST'])
 def new_ticket_command():

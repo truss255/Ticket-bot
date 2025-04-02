@@ -106,13 +106,15 @@ def build_new_ticket_modal():
             {
                 "type": "input",
                 "block_id": "file_upload_block",
-                "optional": True,
-                "label": {"type": "plain_text", "text": "📷 Screenshot/Image URL"},
+                "label": {
+                    "type": "plain_text",
+                    "text": "🖼️ Attach Screenshot (optional)"
+                },
                 "element": {
-                    "type": "plain_text_input",
-                    "action_id": "file_upload_input",
-                    "placeholder": {"type": "plain_text", "text": "Automatically filled after upload (optional)"}
-                }
+                    "type": "file_input",
+                    "action_id": "file_upload_action"
+                },
+                "optional": True
             },
             {"type": "divider"},
             # Upload Image Button
@@ -177,3 +179,4 @@ def build_ticket_confirmation_modal(ticket_id, campaign, issue_type, priority):
             }
         ]
     }
+
