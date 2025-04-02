@@ -3,7 +3,7 @@ import json
 import logging
 import time
 from datetime import datetime, timedelta
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template, redirect, url_for
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 import psycopg2
@@ -15,6 +15,7 @@ import atexit
 import pytz
 from dotenv import load_dotenv
 import requests
+from werkzeug.utils import secure_filename
 
 # Import your ticket template functions or define them inline if the module can't be found
 try:
@@ -394,6 +395,11 @@ load_dotenv()  # Load environment variables from .env
 app = Flask(__name__)
 app.start_time = time.time()
 
+# Configure upload folder
+UPLOAD_FOLDER = 'uploads'
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
 # Configure logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -561,11 +567,6 @@ def update_ticket_status(ticket_id, status, assigned_to=None, message_ts=None, c
 
             # Build updated message blocks (you can also use get_ticket_updated_blocks)
             blocks = [
-                {"type": "header", "text": {"type": "plain_text", "text": "🎫 Ticket Updated", "emoji": True}},
-                {"type": "section", "text": {"type": "mrkdwn",
-                                               "text": f"*Ticket T{updated_ticket[0]:03d}* - {updated_ticket[3]} (Priority: {updated_ticket[4]})\n"
-                                                       f"*Status:* {updated_ticket[5]} {'🟢' if updated_ticket[5]=='Open' else '🔵' if updated_ticket[5]=='In Progress' else '🟡' if updated_ticket[5]=='Resolved' else '🔴'}\n"
-                                                       f"*Assigned To:* {f'<@{updated_ticket[6]}>' if updated_ticket[6] != 'Unassigned' else 'Unassigned'}"}},
                 {"type": "section", "text": {"type": "mrkdwn", "text": f"*Details:* {updated_ticket[7]}"}},
                 {"type": "section", "text": {"type": "mrkdwn", "text": f"*Salesforce Link:* {updated_ticket[8] or 'N/A'}"}},
                 {"type": "section", "text": {"type": "mrkdwn", "text": f"*Screenshot/Image:* {f'<{updated_ticket[9]}|View Image>' if updated_ticket[9] != 'No file uploaded' else 'No image uploaded'}"}},
@@ -791,6 +792,21 @@ def index():
             "/api/tickets/new-ticket"
         ]
     })
+
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    """Handle file uploads and return the file URL."""
+    if 'picture' not in request.files:
+        return jsonify({"error": "No file part"}), 400
+    file = request.files['picture']
+    if file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
+    if file:
+        filename = secure_filename(file.filename)
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(file_path)
+        file_url = url_for('static', filename=f'uploads/{filename}', _external=True)
+        return jsonify({"file_url": file_url}), 200
 
 @app.route('/api/tickets/new-ticket', methods=['POST'])
 def new_ticket_command():
