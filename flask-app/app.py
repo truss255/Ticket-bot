@@ -131,6 +131,74 @@ def build_new_ticket_modal():
         ]
     }
 
+def get_system_ticket_blocks(ticket_id, campaign, issue_type, priority, user_id, details, salesforce_link, file_url):
+    """Returns the blocks for a ticket message in the #systems-issues channel."""
+    # Create the main message blocks
+    blocks = [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"🎟 *New Ticket Created!* (T{ticket_id:03d})"
+            }
+        },
+        {"type": "divider"},
+        {
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"📂 *Campaign:* {campaign}"},
+                {"type": "mrkdwn", "text": f"📌 *Issue:* {issue_type}"}
+            ]
+        },
+        {
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"⚡ *Priority:* {'🔴 High' if priority == 'High' else '🟡 Medium' if priority == 'Medium' else '🔵 Low'}"},
+                {"type": "mrkdwn", "text": f"👤 *Assigned To:* ❌ Unassigned"}
+            ]
+        },
+        {
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"🔄 *Status:* 🟢 Open"},
+                {"type": "mrkdwn", "text": f"👤 *Submitted By:* <@{user_id}>"}
+            ]
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"✏️ *Details:* {details}"}
+        }
+    ]
+
+    # Add Salesforce link if available
+    if salesforce_link and salesforce_link != "N/A":
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"🔗 *Salesforce Link:* <{salesforce_link}|Click Here>"}
+        })
+
+    # Add file attachment if available
+    if file_url and file_url != "No file uploaded":
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"📷 *File Attachment:* <{file_url}|View Screenshot>"}
+        })
+
+    # Add divider before actions
+    blocks.append({"type": "divider"})
+
+    # Add Assign to Me button
+    blocks.append({
+        "type": "actions",
+        "block_id": f"ticket_actions_{ticket_id}",
+        "elements": [
+            {"type": "button", "text": {"type": "plain_text", "text": "🔘 Assign to Me", "emoji": True},
+             "action_id": f"assign_to_me_{ticket_id}", "value": str(ticket_id), "style": "primary"}
+        ]
+    })
+
+    return blocks
+
 def build_ticket_confirmation_modal(ticket_id, campaign, issue_type, priority):
     """Construct a confirmation modal view to display after a successful ticket submission."""
     # Determine the appropriate priority icon.
